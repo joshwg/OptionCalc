@@ -3,11 +3,45 @@ Yahoo Finance Data Fetcher
 Downloads stock prices, historical data, and option information
 """
 
+import os
+import time
 import yfinance as yf
 from datetime import datetime, timedelta
 import numpy as np
 import requests
 import pytz
+
+
+class _TTLCache:
+    """Thread-safe in-memory cache with per-entry TTL."""
+
+    def __init__(self):
+        self._store = {}
+
+    def get(self, key):
+        entry = self._store.get(key)
+        if entry is None:
+            return None, False
+        value, expires_at = entry
+        if time.monotonic() < expires_at:
+            return value, True
+        del self._store[key]
+        return None, False
+
+    def set(self, key, value, ttl):
+        self._store[key] = (value, time.monotonic() + ttl)
+
+    def invalidate(self, key):
+        self._store.pop(key, None)
+
+
+_cache = _TTLCache()
+
+_TTL_STOCK    = int(os.environ.get('CACHE_TTL_STOCK',    300))
+_TTL_OPTIONS  = int(os.environ.get('CACHE_TTL_OPTIONS',  300))
+_TTL_VOL      = int(os.environ.get('CACHE_TTL_VOL',     1800))
+_TTL_EXPIRIES = int(os.environ.get('CACHE_TTL_EXPIRIES', 1800))
+_TTL_SEARCH   = int(os.environ.get('CACHE_TTL_SEARCH',  3600))
 
 
 def normalize_implied_volatility(iv_value):
@@ -62,14 +96,19 @@ def normalize_dividend_yield(div_value):
 def search_ticker(query, max_results=10):
     """
     Search for stock tickers by company name or partial ticker
-    
+
     Parameters:
     query (str): Search query (company name or partial ticker)
     max_results (int): Maximum number of results to return (default 10)
-    
+
     Returns:
     list: List of dictionaries with ticker info [{symbol, name, exchange, type}, ...]
     """
+    cache_key = ('search_ticker', query.lower(), max_results)
+    cached, hit = _cache.get(cache_key)
+    if hit:
+        return cached
+
     try:
         url = "https://query2.finance.yahoo.com/v1/finance/search"
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -99,7 +138,8 @@ def search_ticker(query, max_results=10):
                     'exchange': quote.get('exchange', ''),
                     'type': quote.get('quoteType', '')
                 })
-        
+
+        _cache.set(cache_key, results, _TTL_SEARCH)
         return results
     except Exception as e:
         print(f"Error searching tickers: {e}")
@@ -109,13 +149,18 @@ def search_ticker(query, max_results=10):
 def get_stock_info(ticker):
     """
     Get current stock information
-    
+
     Parameters:
     ticker (str): Stock ticker symbol
-    
+
     Returns:
     dict: Dictionary containing stock information
     """
+    cache_key = ('get_stock_info', ticker.upper())
+    cached, hit = _cache.get(cache_key)
+    if hit:
+        return cached
+
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
@@ -153,7 +198,7 @@ def get_stock_info(ticker):
             except:
                 pass
         
-        return {
+        result = {
             'ticker': ticker,
             'current_price': current_price,
             'company_name': info.get('longName', ticker),
@@ -164,6 +209,8 @@ def get_stock_info(ticker):
             'earnings_date': earnings_date,
             'success': True
         }
+        _cache.set(cache_key, result, _TTL_STOCK)
+        return result
     except Exception as e:
         return {
             'ticker': ticker,
@@ -172,30 +219,41 @@ def get_stock_info(ticker):
         }
 
 
-def calculate_historical_volatility(ticker, period='1y'):
+def calculate_historical_volatility(ticker, period='1y', days=None):
     """
     Calculate historical volatility from stock price history
-    
+
     Parameters:
     ticker (str): Stock ticker symbol
     period (str): Time period ('1mo', '3mo', '6mo', '1y', '2y', '5y')
-    
+
     Returns:
     float: Annualized volatility (as decimal) or None if error
     """
+    if days is not None:
+        if days <= 30:    period = '1mo'
+        elif days <= 90:  period = '3mo'
+        elif days <= 180: period = '6mo'
+        elif days <= 365: period = '1y'
+        elif days <= 730: period = '2y'
+        else:             period = '5y'
+
+    cache_key = ('calculate_historical_volatility', ticker.upper(), period)
+    cached, hit = _cache.get(cache_key)
+    if hit:
+        return cached
+
     try:
         stock = yf.Ticker(ticker)
         hist = stock.history(period=period)
-        
+
         if len(hist) < 2:
             return None
-        
-        # Calculate log returns
+
         log_returns = np.log(hist['Close'] / hist['Close'].shift(1))
-        
-        # Calculate volatility (annualized)
         volatility = log_returns.std() * np.sqrt(252)  # 252 trading days per year
-        
+
+        _cache.set(cache_key, volatility, _TTL_VOL)
         return volatility
     except Exception as e:
         print(f"Error calculating volatility: {e}")
@@ -205,28 +263,35 @@ def calculate_historical_volatility(ticker, period='1y'):
 def get_option_chain(ticker):
     """
     Get option chain for a stock
-    
+
     Parameters:
     ticker (str): Stock ticker symbol
-    
+
     Returns:
     dict: Dictionary containing option chain data
     """
+    cache_key = ('get_option_chain', ticker.upper())
+    cached, hit = _cache.get(cache_key)
+    if hit:
+        return cached
+
     try:
         stock = yf.Ticker(ticker)
         expirations = stock.options
-        
+
         if not expirations:
             return {
                 'success': False,
                 'error': 'No options available for this ticker'
             }
-        
-        return {
+
+        result = {
             'success': True,
             'ticker': ticker,
             'expirations': list(expirations)
         }
+        _cache.set(cache_key, result, _TTL_EXPIRIES)
+        return result
     except Exception as e:
         return {
             'success': False,
@@ -289,14 +354,19 @@ def get_option_chain_next_months(ticker, months=6):
 def get_options_for_expiration(ticker, expiration_date):
     """
     Get options data for a specific expiration date
-    
+
     Parameters:
     ticker (str): Stock ticker symbol
     expiration_date (str): Expiration date in format 'YYYY-MM-DD'
-    
+
     Returns:
     dict: Dictionary containing calls and puts data
     """
+    cache_key = ('get_options_for_expiration', ticker.upper(), expiration_date)
+    cached, hit = _cache.get(cache_key)
+    if hit:
+        return cached
+
     try:
         stock = yf.Ticker(ticker)
         opt = stock.option_chain(expiration_date)
@@ -331,12 +401,14 @@ def get_options_for_expiration(ticker, expiration_date):
                 'implied_volatility': iv
             })
         
-        return {
+        result = {
             'success': True,
             'expiration': expiration_date,
             'calls': calls_data,
             'puts': puts_data
         }
+        _cache.set(cache_key, result, _TTL_OPTIONS)
+        return result
     except Exception as e:
         return {
             'success': False,
@@ -464,12 +536,38 @@ def get_days_to_expiration(expiration_date_str):
 def get_years_to_expiration(expiration_date_str):
     """
     Calculate years to expiration (for Black-Scholes)
-    
+
     Parameters:
     expiration_date_str (str): Expiration date in format 'YYYY-MM-DD'
-    
+
     Returns:
     float: Years to expiration
     """
     days = get_days_to_expiration(expiration_date_str)
     return days / 365.0
+
+
+def get_stock_data(ticker):
+    """Kivy-compatible variant — returns raw stock dict or None on failure"""
+    result = get_stock_info(ticker)
+    if not result.get('success'):
+        return None
+    return {
+        'currentPrice': result['current_price'],
+        'longName': result.get('company_name', ticker),
+        'shortName': result.get('company_name', ticker),
+        'previousClose': result.get('previous_close'),
+        'volume': result.get('volume'),
+        'dividendYield': result.get('dividend_yield', 0),
+    }
+
+
+def get_dividend_yield(ticker):
+    result = get_stock_info(ticker)
+    return result.get('dividend_yield', 0)
+
+
+def get_expiration_dates(ticker):
+    """Kivy-compatible variant — returns list of expiration date strings"""
+    result = get_option_chain_next_months(ticker, months=6)
+    return result.get('expirations', [])

@@ -9,12 +9,8 @@ from datetime import datetime
 import threading
 import os
 
-if os.environ.get('OPTIONCALC_CLIENT_MODE', 'remote').lower() == 'local':
-    import option_pricing as bs
-    import yahoo_data as yd
-else:
-    import server_client as bs
-    import server_client as yd
+import yahoo_data as yd
+import option_pricing as bs
 from config_manager import ConfigManager
 from calculator_operations import CalculatorOperations
 from utils import ThreadingHelper, FontManager, InputValidator, SuggestionWidget

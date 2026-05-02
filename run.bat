@@ -1,3 +1,3 @@
 
 rem run via the virtual environment
-c:\Users\josh\Docs\lab\OptionCalculator\venv\bin\python main.py
+wsl -e bash -c "cd /mnt/c/Users/josh/Docs/lab/OptionCalculator && venv/bin/python main.py 2>&1"

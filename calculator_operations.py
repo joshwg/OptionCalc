@@ -7,8 +7,8 @@ import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
 
-import server_client as bs
-import server_client as yd
+import yahoo_data as yd
+import option_pricing as bs
 from utils import ThreadingHelper, InputValidator
 
 

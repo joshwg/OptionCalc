@@ -15,9 +15,6 @@ class ConfigManager:
     DEFAULT_CONFIG = {
         'risk_free_rate': 0.045,
         'font_size': 14,
-        'mcp_server_mode': 'remote',
-        'mcp_server_url': 'https://optioncalcmcp-production.up.railway.app',
-        'mcp_server_auth_token': '',
     }
     
     @staticmethod
