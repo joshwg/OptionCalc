@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import requests
 import pytz
+import option_pricing as _pricing
 
 
 class _TTLCache:
@@ -42,6 +43,18 @@ _TTL_OPTIONS  = int(os.environ.get('CACHE_TTL_OPTIONS',  300))
 _TTL_VOL      = int(os.environ.get('CACHE_TTL_VOL',     1800))
 _TTL_EXPIRIES = int(os.environ.get('CACHE_TTL_EXPIRIES', 1800))
 _TTL_SEARCH   = int(os.environ.get('CACHE_TTL_SEARCH',  3600))
+
+
+def _iv_from_mid(bid, ask, S, K, T, r, option_type):
+    """Compute implied vol from bid/ask mid price. Returns None if inputs are invalid or Newton-Raphson doesn't converge."""
+    if not (bid > 0 and ask > 0 and S > 0 and K > 0 and T > 0):
+        return None
+    try:
+        return _pricing.implied_volatility(
+            (bid + ask) / 2.0, S, K, T, r, option_type=option_type
+        )
+    except Exception:
+        return None
 
 
 def normalize_implied_volatility(iv_value):
@@ -416,98 +429,106 @@ def get_options_for_expiration(ticker, expiration_date):
         }
 
 
-def get_implied_volatility_for_strike(ticker, expiration_date, strike, option_type='call'):
+def get_implied_volatility_for_strike(ticker, expiration_date, strike, option_type='call', S=None, r=0.045):
     """
-    Get implied volatility for a specific strike and expiration
-    
+    Get implied volatility for a specific strike and expiration.
+    Computes IV from the bid/ask mid price; falls back to Yahoo's pre-computed
+    field only if the mid-based Newton-Raphson does not converge.
+
     Parameters:
     ticker (str): Stock ticker symbol
     expiration_date (str): Expiration date in format 'YYYY-MM-DD'
     strike (float): Strike price
     option_type (str): 'call' or 'put'
-    
+    S (float): Current stock price (fetched automatically if omitted)
+    r (float): Risk-free rate as decimal (default 0.045)
+
     Returns:
     float: Implied volatility (as decimal) or None if not found
     """
     try:
         options = get_options_for_expiration(ticker, expiration_date)
-        
         if not options['success']:
             return None
-        
-        # Get the appropriate option chain
+
         chain = options['calls'] if option_type == 'call' else options['puts']
-        
-        # Find the option with matching strike (or closest)
+
         best_match = None
         min_diff = float('inf')
-        
         for opt in chain:
             diff = abs(opt['strike'] - strike)
             if diff < min_diff:
                 min_diff = diff
                 best_match = opt
-        
-        if best_match and best_match['implied_volatility'] > 0:
-            return best_match['implied_volatility']
-        
-        return None
+
+        if best_match is None:
+            return None
+
+        # Resolve current stock price if not supplied
+        if S is None:
+            info = get_stock_info(ticker)
+            S = info.get('current_price') if info.get('success') else None
+
+        T = get_years_to_expiration(expiration_date)
+        iv = _iv_from_mid(best_match['bid'], best_match['ask'], S, best_match['strike'], T, r, option_type)
+        if iv:
+            return iv
+
+        # Fallback: Yahoo's pre-computed field
+        return best_match['implied_volatility'] if best_match['implied_volatility'] > 0 else None
     except Exception as e:
         print(f"Error getting implied volatility: {e}")
         return None
 
 
-def get_atm_implied_volatility(ticker, expiration_date, current_price, option_type='call'):
+def get_atm_implied_volatility(ticker, expiration_date, current_price, option_type='call', r=0.045):
     """
-    Get at-the-money implied volatility for an expiration date
-    
+    Get at-the-money implied volatility for an expiration date.
+    Computes IV from the bid/ask mid price of the closest ATM option;
+    falls back to Yahoo's pre-computed field if mid-based computation fails.
+
     Parameters:
     ticker (str): Stock ticker symbol
     expiration_date (str): Expiration date in format 'YYYY-MM-DD'
     current_price (float): Current stock price
-    option_type (str): 'call' or 'put' - which IV to return (uses average if not specified)
-    
+    option_type (str): 'call' or 'put'
+    r (float): Risk-free rate as decimal (default 0.045)
+
     Returns:
     float: Implied volatility (as decimal) or None if not found
     """
     try:
         options = get_options_for_expiration(ticker, expiration_date)
-        
         if not options['success']:
             return None
-        
-        # Find ATM options (closest to current price)
-        call_iv = None
-        put_iv = None
-        min_call_diff = float('inf')
-        min_put_diff = float('inf')
-        
-        for call in options['calls']:
-            diff = abs(call['strike'] - current_price)
-            if diff < min_call_diff and call['implied_volatility'] > 0:
-                min_call_diff = diff
-                call_iv = call['implied_volatility']
-        
-        for put in options['puts']:
-            diff = abs(put['strike'] - current_price)
-            if diff < min_put_diff and put['implied_volatility'] > 0:
-                min_put_diff = diff
-                put_iv = put['implied_volatility']
-        
-        # Return IV based on option type
+
+        T = get_years_to_expiration(expiration_date)
+
+        def _best_iv(chain, side):
+            best_opt = None
+            min_diff = float('inf')
+            for opt in chain:
+                diff = abs(opt['strike'] - current_price)
+                if diff < min_diff:
+                    min_diff = diff
+                    best_opt = opt
+            if best_opt is None:
+                return None
+            iv = _iv_from_mid(best_opt['bid'], best_opt['ask'], current_price, best_opt['strike'], T, r, side)
+            if iv:
+                return iv
+            return best_opt['implied_volatility'] if best_opt['implied_volatility'] > 0 else None
+
+        call_iv = _best_iv(options['calls'], 'call')
+        put_iv  = _best_iv(options['puts'],  'put')
+
         if option_type == 'call' and call_iv:
             return call_iv
-        elif option_type == 'put' and put_iv:
+        if option_type == 'put' and put_iv:
             return put_iv
-        elif call_iv and put_iv:
-            # Average of both if option_type not specified or both available
+        if call_iv and put_iv:
             return (call_iv + put_iv) / 2
-        elif call_iv:
-            return call_iv
-        elif put_iv:
-            return put_iv
-        else:
-            return None
+        return call_iv or put_iv
     except Exception as e:
         print(f"Error getting ATM implied volatility: {e}")
         return None

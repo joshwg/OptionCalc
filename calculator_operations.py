@@ -102,23 +102,36 @@ class CalculatorOperations:
                         # Find best strike (closest above current price)
                         best_strike = None
                         best_iv = None
-                        
+                        r_val = float(self.risk_free_rate.get())
+                        T_first = yd.get_years_to_expiration(first_exp)
+
                         for strike in selected_strikes:
                             if strike >= current_price:
                                 best_strike = strike
-                                # Find IV for this strike
                                 for opt in chain_data:
                                     if opt['strike'] == strike:
-                                        best_iv = opt['implied_volatility']
+                                        best_iv = bs.implied_volatility(
+                                            (opt['bid'] + opt['ask']) / 2,
+                                            current_price, strike, T_first, r_val,
+                                            option_type=opt_type
+                                        ) if opt['bid'] > 0 and opt['ask'] > 0 else None
+                                        if not best_iv:
+                                            best_iv = opt['implied_volatility'] or None
                                         break
                                 break
-                        
+
                         # If no strike above, use closest
                         if best_strike is None and selected_strikes:
                             best_strike = selected_strikes[closest_idx] if closest_idx < len(selected_strikes) else selected_strikes[-1]
                             for opt in chain_data:
                                 if opt['strike'] == best_strike:
-                                    best_iv = opt['implied_volatility']
+                                    best_iv = bs.implied_volatility(
+                                        (opt['bid'] + opt['ask']) / 2,
+                                        current_price, best_strike, T_first, r_val,
+                                        option_type=opt_type
+                                    ) if opt['bid'] > 0 and opt['ask'] > 0 else None
+                                    if not best_iv:
+                                        best_iv = opt['implied_volatility'] or None
                                     break
                         
                         if best_strike:
@@ -238,7 +251,11 @@ class CalculatorOperations:
                             
                             # Fetch and store IV for this expiration
                             if current_price:
-                                iv = yd.get_atm_implied_volatility(ticker, exp_date, current_price, opt_type)
+                                try:
+                                    r_val = float(self.risk_free_rate.get())
+                                except (ValueError, AttributeError):
+                                    r_val = 0.045
+                                iv = yd.get_atm_implied_volatility(ticker, exp_date, current_price, opt_type, r=r_val)
                                 # Only use ATM IV if it's reasonable (> 5% / 0.05)
                                 # If IV is too low, it likely means no good ATM option was found
                                 if iv and iv > 0.05:
@@ -421,8 +438,11 @@ class CalculatorOperations:
             self.results_text.insert(tk.END, f"Loading data for {ticker} ${strike} {opt_type}...\n")
             
             def fetch_and_calculate():
-                # Get IV for this strike
-                iv = yd.get_implied_volatility_for_strike(ticker, exp_date, strike, opt_type)
+                # Get IV for this strike computed from bid/ask mid
+                iv = yd.get_implied_volatility_for_strike(
+                    ticker, exp_date, strike, opt_type,
+                    S=current_price, r=float(self.risk_free_rate.get())
+                )
                 
                 if iv:
                     iv_pct = iv * 100

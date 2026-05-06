@@ -653,27 +653,38 @@ class OptionCalculatorWindow(CalculatorOperations):
                 # Find nearest strike above current price
                 best_strike = None
                 best_iv = None
-                
-                # Sort strikes
+                r_val = float(self.risk_free_rate.get())
+                T_exp = yd.get_years_to_expiration(exp_date)
+
                 strikes = sorted([opt['strike'] for opt in chain_data])
-                
-                # Find first strike >= current price
+
                 for strike in strikes:
                     if strike >= current_price:
                         best_strike = strike
-                        # Find IV for this strike
                         for opt in chain_data:
                             if opt['strike'] == strike:
-                                best_iv = opt['implied_volatility']
+                                best_iv = bs.implied_volatility(
+                                    (opt['bid'] + opt['ask']) / 2,
+                                    current_price, strike, T_exp, r_val,
+                                    option_type=opt_type
+                                ) if opt['bid'] > 0 and opt['ask'] > 0 else None
+                                if not best_iv:
+                                    best_iv = opt['implied_volatility'] or None
                                 break
                         break
-                
+
                 # If no strike above, use closest
                 if best_strike is None and strikes:
                     best_strike = min(strikes, key=lambda x: abs(x - current_price))
                     for opt in chain_data:
                         if opt['strike'] == best_strike:
-                            best_iv = opt['implied_volatility']
+                            best_iv = bs.implied_volatility(
+                                (opt['bid'] + opt['ask']) / 2,
+                                current_price, best_strike, T_exp, r_val,
+                                option_type=opt_type
+                            ) if opt['bid'] > 0 and opt['ask'] > 0 else None
+                            if not best_iv:
+                                best_iv = opt['implied_volatility'] or None
                             break
                 
                 if best_strike:
