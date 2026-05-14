@@ -1,6 +1,6 @@
-# Option Calculator - MCP Server Edition
+# Option Calculator
 
-A comprehensive Black-Scholes option calculator with MCP (Model Context Protocol) server architecture. The business logic runs on an MCP server that can be deployed to Railway, while the client can be a desktop app (Tkinter), mobile app (Kivy), or any MCP-compatible client.
+A comprehensive Black-Scholes option calculator. The business logic runs directly in the application process via `yahoo_data.py` and `option_pricing.py`.
 
 ## 🎯 Features
 
@@ -25,102 +25,46 @@ A comprehensive Black-Scholes option calculator with MCP (Model Context Protocol
 
 ## 🏗️ Architecture
 
-### MCP Server (mcp-server/)
-The business logic server providing tools via MCP protocol:
-- Option pricing calculations
-- Greeks calculations
-- Stock data fetching
-- Historical volatility
-- Ticker search
-- Option chain retrieval
-
-**Deploy to:** Railway, AWS, Azure, or run locally
-
-### Desktop Client
-Tkinter-based GUI that connects to the MCP server:
-- User-friendly interface
-- Multiple windows support
-- Real-time data updates
-- Configurable for local or remote server
-
-### Mobile Client (kivy_app/)
-Kivy-based mobile application (can also connect to MCP server)
+```
+yahoo_data.py             # Yahoo Finance data: prices, option chains, IV, volatility
+option_pricing.py         # Pricing models: Black-Scholes, Binomial Tree, Greeks
+server_client.py          # Thin shim re-exporting yahoo_data + option_pricing
+main.py                   # Desktop app entry point (Tkinter)
+calculator_window.py      # Tkinter UI
+calculator_operations.py  # Business logic for desktop app
+config_manager.py         # .env / config.json loading
+utils/                    # Font, input validation, threading, autocomplete widgets
+kivy_app/                 # Android/mobile app (Kivy + KivyMD)
+```
 
 ## 🚀 Quick Start
 
-### Option 1: Use Existing MCP Server (Recommended)
-
-If you already have the MCP server deployed on Railway:
-
-1. **Install Client Dependencies**
+1. **Install Dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-2. **Configure Server URL**
+2. **Configure**
    Create a `.env` file:
    ```env
-   MCP_SERVER_MODE=remote
-   MCP_SERVER_URL=https://your-app.railway.app
-   MCP_SERVER_AUTH_TOKEN=replace-with-a-long-random-token
+   DEFAULT_RISK_FREE_RATE=0.05
+   DEFAULT_VOLATILITY=0.30
    ```
 
 3. **Run Calculator**
-   Run from the top level directory
-   You will need the venv active.
    ```bash
    python main.py
-   ```
-
-### Option 2: Deploy Your Own MCP Server
-
-1. **Deploy to Railway**
-   ```bash
-   # Run from the repository root
-
-   # Option A: Via Railway CLI
-   npm i -g @railway/cli
-   railway login
-   railway link
-   railway up
-   
-   # Option B: Via GitHub
-   # Push to GitHub, then connect to Railway
-   ```
-
-   Railway deployment is supported only from the repository root. Railway should
-   use the root-level `Dockerfile`, `Procfile`, and `railway.json`, which package
-   and start the service from `mcp-server/server.py`.
-
-2. **Or Run Server Locally**
-   ```bash
-   cd mcp-server
-   python3 -m venv ../venv
-   source ../venv/bin/activate
-   pip install -r requirements.txt
-   python3 server.py
-   ```
-
-3. **Configure Client**
-   ```env
-   # For local server
-   MCP_SERVER_MODE=local
-   MCP_SERVER_COMMAND=venv/bin/python mcp-server/server.py
    ```
 
 ## 📁 Project Structure
 
 ```
 OptionCalculator/
-├── mcp-server/              # MCP Server implementation
-│   ├── server.py           # Main server with all tools
-│   ├── requirements.txt    # Server dependencies
-│   └── README.md           # Server documentation
-│
 ├── main.py                 # Desktop app entry point
 ├── calculator_window.py    # Main calculator UI
-├── calculator_operations.py # Calculator logic (MCP client)
-├── mcp_client.py          # MCP client wrapper
+├── calculator_operations.py # Calculator logic
+├── yahoo_data.py           # Market data
+├── option_pricing.py       # Pricing models and Greeks
 ├── config_manager.py       # Configuration management
 │
 ├── utils/                  # Utility modules
@@ -129,13 +73,10 @@ OptionCalculator/
 │   ├── suggestion_widget.py
 │   └── threading_helper.py
 │
-├── kivy_app/              # Mobile application
-│   ├── main.py
-│   ├── optioncalculator.kv
-│   └── screens/
-│
-├── MIGRATION_GUIDE.md      # How to migrate to MCP
-└── deploy_mcp.sh          # WSL/Linux deployment script
+└── kivy_app/              # Mobile application
+    ├── main.py
+    ├── optioncalculator.kv
+    └── screens/
 ```
 
 ## 🛠️ Development
@@ -157,28 +98,19 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
-pip install -r mcp-server/requirements.txt
 ```
 
-### Running Locally
+### Running
 ```bash
-# Terminal 1: Start MCP server locally
-cd mcp-server
-python server.py
-
-# Terminal 2: Run calculator
 python main.py
 ```
 
 ### Testing
 ```bash
-# Test MCP server tools
-python mcp_client.py
-
-# Run unit tests
 python test_option_pricing.py
 python test_yahoo_data.py
 python test_dividend_normalization.py
+python test_ticker_search.py
 ```
 
 ## 🎮 Usage
@@ -217,17 +149,6 @@ python test_dividend_normalization.py
 Create a `.env` file:
 
 ```env
-# Server Mode
-MCP_SERVER_MODE=local|remote
-
-# Local Server
-MCP_SERVER_COMMAND=venv/bin/python mcp-server/server.py
-
-# Remote Server (Railway)
-MCP_SERVER_URL=https://your-app.railway.app
-MCP_SERVER_AUTH_TOKEN=replace-with-a-long-random-token
-
-# UI Settings
 DEFAULT_RISK_FREE_RATE=0.05
 DEFAULT_VOLATILITY=0.30
 ```
@@ -239,59 +160,9 @@ Edit `config.json` for persistent settings:
 {
   "theme": "light",
   "default_risk_free_rate": 0.05,
-  "default_volatility": 0.30,
-  "mcp_server_url": "https://your-app.railway.app"
+  "default_volatility": 0.30
 }
 ```
-
-## 🚢 Deployment
-
-### Deploy MCP Server to Railway
-
-**Method 1: Railway CLI**
-```bash
-railway login
-railway link
-railway up
-```
-
-**Method 2: GitHub Integration**
-1. Push code to GitHub
-2. Go to [railway.app](https://railway.app)
-3. New Project → Deploy from GitHub
-4. Select repository
-5. Railway auto-deploys
-
-**Method 3: Quick Deploy Button**
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new)
-
-### Desktop App Distribution
-```bash
-# Create standalone executable with PyInstaller
-pip install pyinstaller
-pyinstaller --onefile --windowed main.py
-```
-
-## 📚 MCP Tools Reference
-
-The server provides these tools:
-
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `get_stock_info` | Get stock data | ticker |
-| `calculate_option_price` | Price options | S, K, T, r, σ, type, model |
-| `calculate_greeks` | Calculate Greeks | S, K, T, r, σ, type |
-| `get_historical_volatility` | Historical vol | ticker, days |
-| `search_tickers` | Search stocks | query, max_results |
-| `get_option_chain` | Get option chain | ticker, expiration |
-
-See [mcp-server/README.md](mcp-server/README.md) for detailed API documentation.
-
-## 📖 Documentation
-
-- [Migration Guide](MIGRATION_GUIDE.md) - Converting to MCP architecture
-- [MCP Server README](mcp-server/README.md) - Server documentation
-- [Test README](TEST_README.md) - Testing information
 
 ## 🤝 Contributing
 
@@ -322,8 +193,6 @@ MIT License - See LICENSE file for details
 
 ## 🔗 Links
 
-- [Model Context Protocol](https://modelcontextprotocol.io)
-- [Railway Documentation](https://docs.railway.app)
 - [Yahoo Finance](https://finance.yahoo.com)
 - [Black-Scholes Model](https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model)
 
@@ -333,4 +202,4 @@ This tool is for educational and informational purposes only. Not financial advi
 
 ---
 
-**Built with**: Python, MCP, Railway, NumPy, SciPy, Tkinter, yfinance
+**Built with**: Python, NumPy, SciPy, Tkinter, yfinance

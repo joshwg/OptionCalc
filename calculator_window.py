@@ -30,6 +30,15 @@ class OptionCalculatorWindow(CalculatorOperations):
         
         self.window.title("American Option Calculator")
         self.window.geometry("900x900")
+        icon_dir = os.path.dirname(os.path.abspath(__file__))
+        self._icon_imgs = []
+        for size in (256, 48, 32, 16):
+            fname = "app_icon.png" if size == 256 else f"app_icon_{size}.png"
+            path = os.path.join(icon_dir, fname)
+            if os.path.exists(path):
+                self._icon_imgs.append(tk.PhotoImage(file=path))
+        if self._icon_imgs:
+            self.window.iconphoto(True, *self._icon_imgs)
         self.window_index = window_index  # Track which window this is (0-9)
         
         # Create menu bar
@@ -335,6 +344,7 @@ class OptionCalculatorWindow(CalculatorOperations):
         volatility_entry = ttk.Entry(params_frame, textvariable=self.volatility, width=15)
         volatility_entry.grid(row=3, column=1, sticky=tk.W, padx=5, pady=5)
         volatility_entry.bind('<Return>', lambda e: self.on_volatility_change())
+        volatility_entry.bind('<FocusOut>', lambda e: self.on_volatility_change())
         ttk.Label(params_frame, text="(e.g., 25.5 = 25.5%)").grid(row=3, column=2, sticky=tk.W, padx=5, pady=5)
         ttk.Button(params_frame, text="Get Implied Vol", command=self.get_implied_volatility).grid(row=3, column=3, padx=5, pady=5)
         
@@ -348,6 +358,7 @@ class OptionCalculatorWindow(CalculatorOperations):
         dividend_entry = ttk.Entry(params_frame, textvariable=self.dividend_rate, width=15)
         dividend_entry.grid(row=5, column=1, sticky=tk.W, padx=5, pady=5)
         dividend_entry.bind('<Return>', lambda e: self.on_dividend_rate_change())
+        dividend_entry.bind('<FocusOut>', lambda _: self.on_dividend_rate_change())
         ttk.Label(params_frame, text="(e.g., 2.5 = 2.5%)").grid(row=5, column=2, sticky=tk.W, padx=5, pady=5)
         
         ttk.Label(params_frame, text="Calculated Price:").grid(row=6, column=0, sticky=tk.W, padx=5, pady=5)
@@ -547,15 +558,7 @@ class OptionCalculatorWindow(CalculatorOperations):
         self.update_calculated_price()
     
     def on_volatility_change(self):
-        """Update quick view when volatility is manually changed"""
-        if not hasattr(self, 'quick_date_vars'):
-            return
-        
-        # Recalculate all quick date prices with new volatility
-        for i in range(len(self.quick_date_vars)):
-            self.update_quick_date_price(i)
-        
-        # Update calculated price with new volatility
+        """Recalculate the option price when volatility is manually changed"""
         self.update_calculated_price()
     
     def on_risk_free_rate_change(self):
