@@ -233,13 +233,15 @@ class CalculatorOperations:
                             except:
                                 pass
                     
+                    type_suffix = 'c' if opt_type == 'call' else 'p'
+
                     for i, exp_date in enumerate(dates[:3]):  # Take first 3 dates
                         if i < len(self.quick_date_vars):
-                            # Format date as MM/DD/YY
+                            # Format date as MM/DD/YY + c/p suffix
                             try:
                                 date_obj = datetime.strptime(exp_date, '%Y-%m-%d')
-                                formatted_date = date_obj.strftime('%m/%d/%y')
-                                # Add asterisk if this is the closest expiration after earnings
+                                formatted_date = date_obj.strftime('%m/%d/%y') + type_suffix
+                                # Add asterisk prefix if this is the closest expiration after earnings
                                 if closest_after_earnings_idx is not None and i == closest_after_earnings_idx:
                                     formatted_date = "*" + formatted_date
                             except:

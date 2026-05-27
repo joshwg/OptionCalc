@@ -5,12 +5,14 @@ Configuration and Window Geometry Management Utilities
 import json
 import os
 import re
+import threading
 
 
 class ConfigManager:
     """Manages application configuration and window geometry"""
-    
+
     CONFIG_FILE = "config.json"
+    _write_lock = threading.Lock()
 
     DEFAULT_CONFIG = {
         'risk_free_rate': 0.045,
@@ -29,8 +31,9 @@ class ConfigManager:
     @staticmethod
     def save_config(config):
         """Save configuration to JSON file"""
-        with open(ConfigManager.CONFIG_FILE, 'w') as f:
-            json.dump(config, f, indent=2)
+        with ConfigManager._write_lock:
+            with open(ConfigManager.CONFIG_FILE, 'w') as f:
+                json.dump(config, f, indent=2)
     
     @staticmethod
     def is_geometry_valid(x, y, width, height):

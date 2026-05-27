@@ -556,6 +556,10 @@ class OptionCalculatorWindow(CalculatorOperations):
         
         # Update calculated price when option type changes
         self.update_calculated_price()
+
+        # Reload quick view using the new option type's IV/prices
+        if self.ticker.get().strip() and self.current_price.get().strip():
+            self.load_expiration_dates_silent()
     
     def on_volatility_change(self):
         """Recalculate the option price when volatility is manually changed"""
