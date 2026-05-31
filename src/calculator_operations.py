@@ -18,9 +18,8 @@ class CalculatorOperations:
 
     def _fetch_expirations(self, ticker: str) -> dict:
         """Return expiration dates, respecting the 'All dates' checkbox."""
-        if getattr(self, 'all_dates_var', None) and self.all_dates_var.get():
-            return yd.get_option_chain(ticker)
-        return yd.get_option_chain_next_months(ticker, months=6)
+        all_dates = getattr(self, 'all_dates_var', None) and self.all_dates_var.get()
+        return svc.fetch_expirations(ticker, all_dates=bool(all_dates))
 
     def load_stock_data(self):
         """Load stock data from Yahoo Finance"""
@@ -30,13 +29,14 @@ class CalculatorOperations:
         
         # Hide suggestions when loading data
         self.hide_suggestions()
-        
+        self.set_status(f"Loading {ticker}…")
+
         self.results_text.delete(1.0, tk.END)
         self.results_text.insert(tk.END, f"Loading data for {ticker}...\n")
-        
+
         def fetch_data():
             info = yd.get_stock_info(ticker)
-            
+
             if info['success']:
                 current_price = info['current_price']
                 self.current_price.set(str(current_price))
@@ -47,7 +47,8 @@ class CalculatorOperations:
                 earnings_date = info.get('earnings_date') or "unavailable"
                 self.earnings_date.set(earnings_date)
                 self.window.title(f"Option Calculator - {info['company_name']} ({ticker})")
-                
+                self.set_status(f"{info['company_name']}  •  ${current_price:.2f}")
+
                 self.results_text.delete(1.0, tk.END)
                 self.results_text.insert(tk.END, f"Company: {info['company_name']}\n")
                 self.results_text.insert(tk.END, f"Current Price: ${current_price:.2f}\n")
@@ -123,13 +124,15 @@ class CalculatorOperations:
             return
         
         def fetch_dates():
+            self.set_status("Loading expiration dates…")
             chain = self._fetch_expirations(ticker)
-            
+
             if chain['success']:
                 dates = chain['expirations']
                 if dates:
                     self.expiration_combo['values'] = dates
-                    
+                    self.set_status(f"{len(dates)} expiration dates loaded")
+
                     # Populate quick dates section with first 3 expirations
                     # Only populate if a strike price has been selected
                     strike_str = self.strike_price.get().strip()
@@ -157,36 +160,9 @@ class CalculatorOperations:
                         except:
                             pass
                     
-                    # Determine if this stock offers weekly or monthly options
-                    # Weekly options: multiple expirations in same month
-                    # Monthly options: typically one per month (3rd Friday)
-                    has_weekly_options = False
-                    if len(dates) >= 2:
-                        try:
-                            date1 = datetime.strptime(dates[0], '%Y-%m-%d')
-                            date2 = datetime.strptime(dates[1], '%Y-%m-%d')
-                            # If first two expirations are in same month, stock has weekly options
-                            if date1.month == date2.month and date1.year == date2.year:
-                                has_weekly_options = True
-                        except:
-                            pass
-                    
-                    # Set threshold based on option type available
-                    threshold = 7 if has_weekly_options else 30
-                    
-                    # Find first available expiration after earnings date within threshold
-                    closest_after_earnings_idx = None
-                    if earnings_date_obj:
-                        for i, exp_date in enumerate(dates[:3]):
-                            try:
-                                exp_date_obj = datetime.strptime(exp_date, '%Y-%m-%d')
-                                if exp_date_obj > earnings_date_obj:
-                                    days_after = (exp_date_obj - earnings_date_obj).days
-                                    if days_after <= threshold:
-                                        closest_after_earnings_idx = i
-                                        break  # Mark first one that meets criteria
-                            except:
-                                pass
+                    closest_after_earnings_idx = svc.find_post_earnings_expiration(
+                        dates, earnings_date_obj
+                    )
                     
                     type_suffix = 'c' if opt_type == 'call' else 'p'
 
@@ -206,44 +182,28 @@ class CalculatorOperations:
                             self.quick_date_vars[i]['date'].set(formatted_date)
                             self.quick_date_vars[i]['full_date'] = exp_date
                             
-                            # Fetch and store IV for this expiration
+                            # Fetch ATM IV; fall back to main volatility field if unavailable or too low
+                            iv = None
                             if current_price:
                                 try:
                                     r_val = float(self.risk_free_rate.get())
                                 except (ValueError, AttributeError):
                                     r_val = 0.045
-                                iv = yd.get_atm_implied_volatility(ticker, exp_date, current_price, opt_type, r=r_val)
-                                # Only use ATM IV if it's reasonable (> 5% / 0.05)
-                                # If IV is too low, it likely means no good ATM option was found
-                                if iv and iv > 0.05:
-                                    self.quick_date_vars[i]['iv'] = iv
-                                    self.quick_date_vars[i]['iv_display'].set(f"{iv*100:.2f}%")
-                                else:
-                                    # Fall back to main volatility field if no ATM IV available or too low
-                                    try:
-                                        main_vol = float(self.volatility.get()) / 100
-                                        if main_vol > 0:
-                                            self.quick_date_vars[i]['iv'] = main_vol
-                                            self.quick_date_vars[i]['iv_display'].set(f"{main_vol*100:.2f}%")
-                                        else:
-                                            self.quick_date_vars[i]['iv'] = None
-                                            self.quick_date_vars[i]['iv_display'].set("--")
-                                    except (ValueError, AttributeError):
-                                        self.quick_date_vars[i]['iv'] = None
-                                        self.quick_date_vars[i]['iv_display'].set("--")
-                            else:
-                                # Try to use main volatility field
+                                fetched = yd.get_atm_implied_volatility(ticker, exp_date, current_price, opt_type, r=r_val)
+                                if fetched and fetched > 0.05:
+                                    iv = fetched
+                            if iv is None:
                                 try:
                                     main_vol = float(self.volatility.get()) / 100
-                                    if main_vol > 0:
-                                        self.quick_date_vars[i]['iv'] = main_vol
-                                        self.quick_date_vars[i]['iv_display'].set(f"{main_vol*100:.2f}%")
-                                    else:
-                                        self.quick_date_vars[i]['iv'] = None
-                                        self.quick_date_vars[i]['iv_display'].set("--")
+                                    iv = main_vol if main_vol > 0 else None
                                 except (ValueError, AttributeError):
-                                    self.quick_date_vars[i]['iv'] = None
-                                    self.quick_date_vars[i]['iv_display'].set("--")
+                                    iv = None
+                            if iv:
+                                self.quick_date_vars[i]['iv'] = iv
+                                self.quick_date_vars[i]['iv_display'].set(f"{iv*100:.2f}%")
+                            else:
+                                self.quick_date_vars[i]['iv'] = None
+                                self.quick_date_vars[i]['iv_display'].set("--")
                             
                             # Set strike only if strike price is selected
                             if strike_to_use:
@@ -341,13 +301,15 @@ class CalculatorOperations:
         self.results_text.insert(tk.END, f"\nLoading expiration dates for {ticker}...\n")
         
         def fetch_dates():
+            self.set_status("Loading expiration dates…")
             chain = self._fetch_expirations(ticker)
-            
+
             if chain['success']:
                 dates = chain['expirations']
                 if dates:
                     self.expiration_combo['values'] = dates
-                    self.results_text.insert(tk.END, f"Loaded {len(dates)} expiration dates for next 6 months.\n")
+                    self.set_status(f"{len(dates)} expiration dates loaded")
+                    self.results_text.insert(tk.END, f"Loaded {len(dates)} expiration dates.\n")
                     self.results_text.insert(tk.END, "Select from dropdown or type a date manually.\n")
                 else:
                     self.results_text.insert(tk.END, "No expirations found in next 6 months.\n")
@@ -504,6 +466,11 @@ class CalculatorOperations:
             r = float(self.risk_free_rate.get())
             opt_type = self.option_type.get()
             
+            T = yd.get_years_to_expiration(exp_date)
+            if T <= 0:
+                messagebox.showwarning("Warning", "Option has expired or expiration date is invalid")
+                return
+
             # Get dividend yield from field
             q = InputValidator.get_dividend_yield(self.dividend_rate.get(), self.dividend_yield)
 
@@ -513,10 +480,6 @@ class CalculatorOperations:
             price  = result['price']
             greeks = result['greeks']
 
-            if T <= 0:
-                messagebox.showwarning("Warning", "Option has expired or expiration date is invalid")
-                return
-            
             # Display results
             self.results_text.delete(1.0, tk.END)
             self.results_text.insert(tk.END, "=" * 60 + "\n")
@@ -564,10 +527,6 @@ class CalculatorOperations:
             if not ticker:
                 return
             opt_type = self.option_type.get()
-            
-            if not ticker:
-                messagebox.showwarning("Input Error", "Please enter a ticker symbol")
-                return
             
             self.results_text.delete(1.0, tk.END)
             self.results_text.insert(tk.END, f"Calculating {opt_type} option prices for first 3 expiration dates...\n\n")

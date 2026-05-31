@@ -20,25 +20,40 @@ class OptionCalculatorWindow(CalculatorOperations):
     """Individual window for a specific stock's option calculations"""
     
     def __init__(self, parent, ticker=None, window_index=0):
-        # First window is Tk, subsequent windows are Toplevel
+        # First window is the Tk root; subsequent windows are Toplevels.
+        # Guard: if 'main' is imported as a fresh module (separate from __main__)
+        # the caller may pass parent=None even though a Tk root already exists.
+        # Attaching to the existing root avoids creating a second Tk() instance,
+        # which confuses Tcl and breaks iconphoto.
         if parent is None:
-            self.window = tk.Tk()  # Root window
-            self.root_window = self.window  # Store root reference
+            existing_root = getattr(tk, '_default_root', None)
+            if existing_root is not None:
+                parent = existing_root          # attach to the live root
+
+        if parent is None:
+            self.window = tk.Tk()               # this IS the root
+            self.root_window = self.window
         else:
-            self.window = tk.Toplevel(parent)  # Child window
-            self.root_window = parent  # Store root reference for threading
-        
+            self.window = tk.Toplevel(parent)   # child window
+            self.root_window = parent
+
         self.window.title("American Option Calculator")
         self.window.geometry("900x900")
+
+        # Set iconphoto only on the actual Tk root window.
+        # iconphoto(True, ...) registers the images as the default for all
+        # future Toplevel windows, so they inherit it automatically.
         icon_dir = os.path.dirname(os.path.abspath(__file__))
-        self._icon_imgs = []
-        for size in (256, 48, 32, 16):
-            fname = "app_icon.png" if size == 256 else f"app_icon_{size}.png"
-            path = os.path.join(icon_dir, fname)
-            if os.path.exists(path):
-                self._icon_imgs.append(tk.PhotoImage(file=path))
-        if self._icon_imgs:
-            self.window.iconphoto(True, *self._icon_imgs)
+        if isinstance(self.window, tk.Tk):
+            self._icon_imgs = []
+            for size in (256, 48, 32, 16):
+                fname = "app_icon.png" if size == 256 else f"app_icon_{size}.png"
+                path = os.path.join(icon_dir, fname)
+                if os.path.exists(path):
+                    self._icon_imgs.append(tk.PhotoImage(file=path))
+            if self._icon_imgs:
+                self.window.iconphoto(True, *self._icon_imgs)
+
         self.window_index = window_index  # Track which window this is (0-9)
         
         # Create menu bar
@@ -60,6 +75,7 @@ class OptionCalculatorWindow(CalculatorOperations):
         self.dividend_rate = tk.StringVar(master=self.window, value="0.00")  # Display variable for dividend rate %
         self.earnings_date = tk.StringVar(master=self.window, value="--")  # Display variable for earnings date
         self.all_dates_var = tk.BooleanVar(master=self.window, value=False)  # Show all expirations vs 6-month window
+        self.status_var = tk.StringVar(master=self.window, value="")  # Status line in stock info panel
         
         # Radio button references for bold styling
         self.call_radio = None
@@ -320,7 +336,12 @@ class OptionCalculatorWindow(CalculatorOperations):
         
         ttk.Label(stock_frame, text="Next Earnings:").grid(row=1, column=2, sticky=tk.W, padx=5, pady=5)
         ttk.Label(stock_frame, textvariable=self.earnings_date, width=15).grid(row=1, column=3, sticky=tk.W, padx=5, pady=5)
-        
+
+        # Row 3: status message
+        ttk.Label(stock_frame, textvariable=self.status_var,
+                  foreground="gray").grid(row=3, column=0, columnspan=5,
+                                          sticky=tk.W, padx=5, pady=(0, 2))
+
         # Option Parameters Section
         params_frame = ttk.LabelFrame(main_frame, text="Option Parameters", padding="10")
         params_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
@@ -582,13 +603,9 @@ class OptionCalculatorWindow(CalculatorOperations):
     
     def on_dividend_rate_change(self):
         """Handle dividend rate change from user input"""
-        try:
-            # Get dividend rate as percentage and convert to decimal
-            div_rate_pct = float(self.dividend_rate.get())
-            self.dividend_yield = div_rate_pct / 100
-        except ValueError:
-            # If invalid, keep current value
-            pass
+        self.dividend_yield = InputValidator.get_dividend_yield(
+            self.dividend_rate.get(), self.dividend_yield
+        )
         
         # Recalculate all quick date prices with new dividend rate
         for i in range(len(self.quick_date_vars)):
@@ -609,17 +626,18 @@ class OptionCalculatorWindow(CalculatorOperations):
             opt_type = self.option_type.get()
             
             # Get dividend yield from field (in case user edited it)
-            try:
-                q = float(self.dividend_rate.get()) / 100
-            except ValueError:
-                q = self.dividend_yield
+            q = InputValidator.get_dividend_yield(self.dividend_rate.get(), self.dividend_yield)
             
             price = svc.price_option(S, K, exp_date, sigma, r, q, opt_type)['price']
             self.calculated_price.set(f"${price:.2f}")
             
         except (ValueError, TypeError):
             self.calculated_price.set("--")
-    
+
+    def set_status(self, msg: str) -> None:
+        """Update the status line in the Stock Information panel."""
+        self.status_var.set(msg)
+
     def on_expiration_date_change(self, *args):
         """Handle expiration date change - auto-load strike and IV"""
         ticker = self.ticker.get().strip().upper()
@@ -685,4 +703,4 @@ class OptionCalculatorWindow(CalculatorOperations):
             else:
                 self.results_text.insert(tk.END, f"Error loading options: {options.get('error', 'Unknown error')}\n")
         
-        threading.Thread(target=fetch_and_populate, daemon=True).start()
+        ThreadingHelper.run_async_simple(fetch_and_populate, self.root_window)

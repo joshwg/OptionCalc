@@ -202,10 +202,8 @@ def api_hist_vol(ticker: str):
 @app.route("/api/expirations/<ticker>")
 def api_expirations(ticker: str):
     ticker = ticker.strip().upper()
-    if request.args.get("all", "false").lower() == "true":
-        chain = yd.get_option_chain(ticker)
-    else:
-        chain = yd.get_option_chain_next_months(ticker, months=6)
+    all_dates = request.args.get("all", "false").lower() == "true"
+    chain = svc.fetch_expirations(ticker, all_dates=all_dates)
     if not chain.get("success"):
         return jsonify({"error": chain.get("error", "Failed to get expirations")}), 400
     return jsonify({"expirations": chain.get("expirations", [])})
@@ -304,7 +302,7 @@ def api_iv():
 
     # Delegate to option_service using a minimal option-row shim
     opt_row = {"bid": market_price, "ask": market_price, "implied_volatility": None}
-    iv = svc._iv_for_strike(opt_row, K, S, T, r, opt_type)
+    iv = svc.iv_for_strike(opt_row, K, S, T, r, opt_type)
     return jsonify({"iv": iv})
 
 

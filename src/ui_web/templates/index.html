@@ -14,48 +14,42 @@
   <!-- ── Stock Info ────────────────────────────────────────────────────────── -->
   <div class="card mb-2">
     <div class="card-body py-2">
-      <div class="row g-2 align-items-end flex-wrap">
 
-        <!-- Ticker input with autocomplete -->
-        <div class="col-auto" style="position:relative" id="tickerWrap">
-          <label class="form-label form-label-sm mb-0" for="fTicker">Ticker</label>
+      <!-- Row 1: Ticker + action buttons + logout -->
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <div style="position:relative" id="tickerWrap">
           <input type="text" class="form-control form-control-sm text-uppercase"
-                 id="fTicker" placeholder="e.g. AAPL" autocomplete="off"
-                 style="width:100px">
+                 id="fTicker" placeholder="Ticker (e.g. AAPL)" autocomplete="off"
+                 style="width:160px">
           <div id="suggestionsBox" class="oc-suggestions" style="display:none"></div>
         </div>
-
-        <!-- Action buttons -->
-        <div class="col-auto">
-          <button class="btn btn-sm btn-primary" id="btnLoad">Load</button>
-          <button class="btn btn-sm btn-outline-secondary ms-1" id="btnHistVol"
-                  title="Set volatility from 1-year historical data">Hist Vol</button>
-        </div>
-
-        <!-- Stock price -->
-        <div class="col-auto">
-          <label class="form-label form-label-sm mb-0" for="fPrice">Stock Price ($)</label>
-          <input type="number" class="form-control form-control-sm" id="fPrice"
-                 step="0.01" min="0" style="width:90px" placeholder="0.00">
-        </div>
-
-        <!-- Company + earnings -->
-        <div class="col">
-          <div id="lblCompany" class="fw-semibold small text-truncate">&nbsp;</div>
-          <div class="small text-muted">
-            Earnings: <strong id="lblEarnings" class="text-dark">--</strong>
-          </div>
-        </div>
-
-        <!-- Logout -->
-        <div class="col-auto align-self-start pt-1">
-          <a class="btn btn-sm btn-outline-secondary" href="/logout"
-             title="Log out">&#128682;</a>
-        </div>
-
+        <button class="btn btn-sm btn-primary" id="btnLoad"
+                title="Fetch current price, dividend yield, earnings date, and option chain for this ticker">Load</button>
+        <button class="btn btn-sm btn-outline-secondary" id="btnHistVol"
+                title="Set volatility from 1-year historical data">Hist Vol</button>
+        <a class="btn btn-sm btn-outline-secondary ms-auto" href="/logout"
+           title="Log out">&#128682;</a>
       </div>
-      <!-- Status feedback — visible in the top area while data is loading -->
+
+      <!-- Row 2: Stock price + company name + earnings -->
+      <div class="d-flex align-items-center gap-3 mb-1 flex-wrap">
+        <div class="d-flex align-items-center gap-1">
+          <label class="form-label form-label-sm mb-0 text-nowrap" for="fPrice">
+            Price ($)
+          </label>
+          <input type="number" class="form-control form-control-sm" id="fPrice"
+                 step="0.01" min="0" style="width:85px" placeholder="0.00"
+                 title="Current stock price. Auto-filled when a ticker is loaded; can be overridden manually to model hypothetical scenarios.">
+        </div>
+        <div id="lblCompany" class="fw-semibold small text-truncate">&nbsp;</div>
+        <div class="small text-muted ms-auto text-nowrap">
+          Earnings: <strong id="lblEarnings" class="text-dark">--</strong>
+        </div>
+      </div>
+
+      <!-- Row 3: Status -->
       <div id="statusLine" class="mt-1"></div>
+
     </div>
   </div>
 
@@ -91,10 +85,13 @@
                    for="fExpiration">Expiration</label>
             <div class="col-7 d-flex align-items-center gap-2">
               <select class="form-select form-select-sm" id="fExpiration"
-                      style="flex:1"></select>
+                      style="flex:1"
+                      title="Option expiration date. Choosing a new date auto-fills the nearest ATM strike and its implied volatility."></select>
               <div class="form-check mb-0 text-nowrap">
-                <input class="form-check-input" type="checkbox" id="chkAllDates">
-                <label class="form-check-label small" for="chkAllDates">All</label>
+                <input class="form-check-input" type="checkbox" id="chkAllDates"
+                       title="Show every available expiration date instead of only the next 6 months">
+                <label class="form-check-label small" for="chkAllDates"
+                       title="Show every available expiration date instead of only the next 6 months">All</label>
               </div>
             </div>
           </div>
@@ -104,7 +101,8 @@
             <label class="col-5 col-form-label col-form-label-sm"
                    for="fStrike">Strike Price</label>
             <div class="col-7">
-              <select class="form-select form-select-sm" id="fStrike"></select>
+              <select class="form-select form-select-sm" id="fStrike"
+                      title="Option strike price. Choosing a new strike auto-fills the implied volatility computed from the market bid/ask midpoint."></select>
             </div>
           </div>
 
@@ -114,7 +112,8 @@
                    for="fVolatility">Volatility (σ) %</label>
             <div class="col-7">
               <input type="number" class="form-control form-control-sm" id="fVolatility"
-                     step="0.1" min="0" max="1000" placeholder="e.g. 25.5">
+                     step="0.1" min="0" max="1000" placeholder="e.g. 25.5"
+                     title="Implied (or historical) volatility as a percentage — e.g. 25.5 means 25.5%. Auto-filled from the option chain when a strike is selected.">
             </div>
           </div>
 
@@ -127,7 +126,8 @@
                      step="0.001" min="0" max="1" placeholder="0.045"
                      style="width:80px" title="Decimal, e.g. 0.045 = 4.5%">
               <button class="btn btn-sm btn-outline-secondary py-0 px-1"
-                      id="btnSaveConfig">Save</button>
+                      id="btnSaveConfig"
+                      title="Save this risk-free rate as the default for future sessions">Save</button>
               <span id="cfgSavedMsg" class="small text-success"
                     style="display:none">✓</span>
             </div>
@@ -139,7 +139,8 @@
                    for="fDividend">Dividend (q) %</label>
             <div class="col-7">
               <input type="number" class="form-control form-control-sm" id="fDividend"
-                     step="0.01" min="0" max="100" placeholder="e.g. 0.50">
+                     step="0.01" min="0" max="100" placeholder="e.g. 0.50"
+                     title="Annual dividend yield as a percentage — e.g. 1.5 means 1.5%. Auto-filled from Yahoo Finance when a ticker is loaded.">
             </div>
           </div>
 
@@ -175,21 +176,24 @@
               <tr id="qrow0">
                 <td id="qdate0">--</td>
                 <td><input type="number" class="form-control oc-qstrike"
-                           id="qstrike0" step="0.5" placeholder="--"></td>
-                <td id="qiv0">--</td>
-                <td id="qprice0">--</td>
+                           id="qstrike0" step="0.5" placeholder="--"
+                           title="Override the strike price for this expiration, then press Enter to recalculate"></td>
+                <td id="qiv0" title="At-the-money implied volatility fetched from the option chain">--</td>
+                <td id="qprice0" title="Theoretical fair price using the ATM implied volatility for this expiration">--</td>
               </tr>
               <tr id="qrow1">
                 <td id="qdate1">--</td>
                 <td><input type="number" class="form-control oc-qstrike"
-                           id="qstrike1" step="0.5" placeholder="--"></td>
-                <td id="qiv1">--</td>
-                <td id="qprice1">--</td>
+                           id="qstrike1" step="0.5" placeholder="--"
+                           title="Override the strike price for this expiration, then press Enter to recalculate"></td>
+                <td id="qiv1" title="At-the-money implied volatility fetched from the option chain">--</td>
+                <td id="qprice1" title="Theoretical fair price using the ATM implied volatility for this expiration">--</td>
               </tr>
               <tr id="qrow2">
                 <td id="qdate2">--</td>
                 <td><input type="number" class="form-control oc-qstrike"
-                           id="qstrike2" step="0.5" placeholder="--"></td>
+                           id="qstrike2" step="0.5" placeholder="--"
+                           title="Override the strike price for this expiration, then press Enter to recalculate"></td>
                 <td id="qiv2">--</td>
                 <td id="qprice2">--</td>
               </tr>
@@ -203,7 +207,8 @@
 
   <!-- ── Actions + status ───────────────────────────────────────────────────── -->
   <div class="d-flex gap-2 mb-2 align-items-center">
-    <button class="btn btn-sm btn-primary" id="btnCalculate">
+    <button class="btn btn-sm btn-primary" id="btnCalculate"
+            title="Run full American Binomial valuation and display the option price, time values, and all Greeks (Δ Γ Θ ν ρ)">
       Calculate Option Price
     </button>
   </div>
