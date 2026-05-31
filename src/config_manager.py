@@ -7,11 +7,15 @@ import os
 import re
 import threading
 
+# data/ lives one level above src/ (i.e. at the project root)
+_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+os.makedirs(_DATA_DIR, exist_ok=True)  # ensure data/ exists on first run
+
 
 class ConfigManager:
     """Manages application configuration and window geometry"""
 
-    CONFIG_FILE = "config.json"
+    CONFIG_FILE = os.path.join(_DATA_DIR, "config.json")
     _write_lock = threading.Lock()
 
     DEFAULT_CONFIG = {

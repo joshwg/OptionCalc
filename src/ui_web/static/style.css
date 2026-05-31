@@ -1,0 +1,88 @@
+/* Option Calculator web UI — supplemental styles on top of Bootstrap */
+
+.oc-app { max-width: 560px; }
+
+@media (min-width: 768px) { .oc-app { max-width: 880px; } }
+@media (max-width: 599px) { .oc-app { max-width: 100%; } }
+
+/* ── Ticker autocomplete ──────────────────────────────────────────────────── */
+
+.oc-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 260px;
+    max-height: 220px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0 0 4px 4px;
+    z-index: 200;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.oc-suggest-item {
+    padding: 5px 10px;
+    cursor: pointer;
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 0.85rem;
+}
+
+.oc-suggest-item:hover { background: #f0f4ff; }
+
+.oc-suggest-sym {
+    font-weight: 600;
+    min-width: 52px;
+    color: #0d6efd;
+}
+
+.oc-suggest-name {
+    color: #6c757d;
+    font-size: 0.78rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+/* ── Fair price ───────────────────────────────────────────────────────────── */
+
+.oc-price {
+    font-size: 1.15rem;
+    color: #0d6efd;
+}
+
+/* ── Quick-view table ─────────────────────────────────────────────────────── */
+
+#quickViewTable td { vertical-align: middle; font-size: 0.85rem; }
+
+.oc-qstrike {
+    width: 75px;
+    padding: 1px 4px !important;
+    font-size: 0.82rem;
+}
+
+/* ── Results pre ──────────────────────────────────────────────────────────── */
+
+.oc-results {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.8rem;
+    padding: 10px 12px;
+    min-height: 160px;
+    max-height: calc(100dvh - 520px);
+    overflow-y: auto;
+    white-space: pre;
+    background: #f8f9fa;
+    color: #212529;
+    border-radius: 0 0 4px 4px;
+}
+
+/* ── Status line ──────────────────────────────────────────────────────────── */
+
+#statusLine {
+    font-size: 0.8rem;
+    color: #6c757d;
+    min-height: 1.2em;
+}

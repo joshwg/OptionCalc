@@ -10,7 +10,7 @@ import threading
 import os
 
 import yahoo_data as yd
-import option_pricing as bs
+import option_service as svc
 from config_manager import ConfigManager
 from calculator_operations import CalculatorOperations
 from utils import ThreadingHelper, FontManager, InputValidator, SuggestionWidget
@@ -611,12 +611,7 @@ class OptionCalculatorWindow(CalculatorOperations):
             except ValueError:
                 q = self.dividend_yield
             
-            # Calculate time to expiration
-            T = yd.get_years_to_expiration(exp_date)
-            
-            # Calculate option price using American binomial model
-            price = bs.american_option_binomial(S, K, T, r, sigma, q=q, option_type=opt_type, steps=100)
-            
+            price = svc.price_option(S, K, exp_date, sigma, r, q, opt_type)['price']
             self.calculated_price.set(f"${price:.2f}")
             
         except (ValueError, TypeError):
@@ -656,54 +651,20 @@ class OptionCalculatorWindow(CalculatorOperations):
             if options['success']:
                 opt_type = self.option_type.get()
                 chain_data = options['calls'] if opt_type == 'call' else options['puts']
-                
-                # Find nearest strike above current price
-                best_strike = None
-                best_iv = None
+
+                # Find best strike (at/above ATM) + its IV, and ±10 strike window
                 r_val = float(self.risk_free_rate.get())
                 T_exp = yd.get_years_to_expiration(exp_date)
+                best_strike, best_iv, strikes = svc.find_atm_strike_with_iv(
+                    chain_data, current_price, T_exp, r_val, opt_type
+                )
+                nearby_strikes, _ = svc.atm_strikes_window(strikes, current_price)
 
-                strikes = sorted([opt['strike'] for opt in chain_data])
-
-                for strike in strikes:
-                    if strike >= current_price:
-                        best_strike = strike
-                        for opt in chain_data:
-                            if opt['strike'] == strike:
-                                best_iv = bs.implied_volatility(
-                                    (opt['bid'] + opt['ask']) / 2,
-                                    current_price, strike, T_exp, r_val,
-                                    option_type=opt_type
-                                ) if opt['bid'] > 0 and opt['ask'] > 0 else None
-                                if not best_iv:
-                                    best_iv = opt['implied_volatility'] or None
-                                break
-                        break
-
-                # If no strike above, use closest
-                if best_strike is None and strikes:
-                    best_strike = min(strikes, key=lambda x: abs(x - current_price))
-                    for opt in chain_data:
-                        if opt['strike'] == best_strike:
-                            best_iv = bs.implied_volatility(
-                                (opt['bid'] + opt['ask']) / 2,
-                                current_price, best_strike, T_exp, r_val,
-                                option_type=opt_type
-                            ) if opt['bid'] > 0 and opt['ask'] > 0 else None
-                            if not best_iv:
-                                best_iv = opt['implied_volatility'] or None
-                            break
-                
                 if best_strike:
                     # Update strike price - this will trigger on_strike_price_change
                     self.strike_price.set(str(best_strike))
-                    
-                    # Populate strike combobox with nearby strikes
-                    start_idx = max(0, strikes.index(best_strike) - 10)
-                    end_idx = min(len(strikes), strikes.index(best_strike) + 11)
-                    nearby_strikes = strikes[start_idx:end_idx]
                     self.strike_combo['values'] = nearby_strikes
-                    
+
                     # Set IV
                     if best_iv and best_iv > 0:
                         iv_pct = best_iv * 100

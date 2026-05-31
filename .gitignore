@@ -96,8 +96,8 @@ bin/
 *~.nib
 Save/
 
-# Local data
-data/
+# Local data (config.json is runtime user data, not source)
+data/config.json
 cache/
 
 # Sensitive information

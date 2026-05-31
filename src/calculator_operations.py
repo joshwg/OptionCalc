@@ -8,7 +8,8 @@ from tkinter import messagebox
 from datetime import datetime
 
 import yahoo_data as yd
-import option_pricing as bs
+import option_pricing as bs  # noqa: F401 (re-exported for callers that import via this module)
+import option_service as svc
 from utils import ThreadingHelper, InputValidator
 
 
@@ -70,69 +71,17 @@ class CalculatorOperations:
                         opt_type = self.option_type.get()
                         chain_data = options['calls'] if opt_type == 'call' else options['puts']
                         
-                        # Get all strikes and sort them
-                        all_strikes = sorted([opt['strike'] for opt in chain_data])
-                        
-                        # Find strikes within range (10 above and below current price)
-                        strikes_in_range = []
-                        for strike in all_strikes:
-                            strikes_in_range.append(strike)
-                        
-                        # Sort and find the one closest to current price
-                        strikes_in_range.sort()
-                        
-                        # Find index of strike closest to current price
-                        closest_idx = 0
-                        min_diff = float('inf')
-                        for i, strike in enumerate(strikes_in_range):
-                            diff = abs(strike - current_price)
-                            if diff < min_diff:
-                                min_diff = diff
-                                closest_idx = i
-                        
-                        # Get 10 strikes above and below the closest one
-                        start_idx = max(0, closest_idx - 10)
-                        end_idx = min(len(strikes_in_range), closest_idx + 11)
-                        selected_strikes = strikes_in_range[start_idx:end_idx]
-                        
+                        # Find best strike (at/above ATM) + its IV, and ±10 strike window
+                        r_val = float(self.risk_free_rate.get())
+                        T_first = yd.get_years_to_expiration(first_exp)
+                        best_strike, best_iv, all_strikes = svc.find_atm_strike_with_iv(
+                            chain_data, current_price, T_first, r_val, opt_type
+                        )
+                        selected_strikes, _ = svc.atm_strikes_window(all_strikes, current_price)
+
                         # Populate strike combobox
                         self.strike_combo['values'] = selected_strikes
                         self.results_text.insert(tk.END, f"Loaded {len(selected_strikes)} strike prices\n")
-                        
-                        # Find best strike (closest above current price)
-                        best_strike = None
-                        best_iv = None
-                        r_val = float(self.risk_free_rate.get())
-                        T_first = yd.get_years_to_expiration(first_exp)
-
-                        for strike in selected_strikes:
-                            if strike >= current_price:
-                                best_strike = strike
-                                for opt in chain_data:
-                                    if opt['strike'] == strike:
-                                        best_iv = bs.implied_volatility(
-                                            (opt['bid'] + opt['ask']) / 2,
-                                            current_price, strike, T_first, r_val,
-                                            option_type=opt_type
-                                        ) if opt['bid'] > 0 and opt['ask'] > 0 else None
-                                        if not best_iv:
-                                            best_iv = opt['implied_volatility'] or None
-                                        break
-                                break
-
-                        # If no strike above, use closest
-                        if best_strike is None and selected_strikes:
-                            best_strike = selected_strikes[closest_idx] if closest_idx < len(selected_strikes) else selected_strikes[-1]
-                            for opt in chain_data:
-                                if opt['strike'] == best_strike:
-                                    best_iv = bs.implied_volatility(
-                                        (opt['bid'] + opt['ask']) / 2,
-                                        current_price, best_strike, T_first, r_val,
-                                        option_type=opt_type
-                                    ) if opt['bid'] > 0 and opt['ask'] > 0 else None
-                                    if not best_iv:
-                                        best_iv = opt['implied_volatility'] or None
-                                    break
                         
                         if best_strike:
                             self.strike_price.set(str(best_strike))
@@ -455,18 +404,15 @@ class CalculatorOperations:
                     try:
                         S = current_price
                         K = strike
-                        T = yd.get_years_to_expiration(exp_date)
-                        sigma = iv
                         r = float(self.risk_free_rate.get())
-                        
+
                         # Get dividend yield from field
                         q = InputValidator.get_dividend_yield(self.dividend_rate.get(), self.dividend_yield)
-                        
-                        # Calculate option price using American binomial model
-                        price = bs.american_option_binomial(S, K, T, r, sigma, q=q, option_type=opt_type, steps=100)
-                        
-                        # Calculate Greeks
-                        greeks = bs.calculate_greeks(S, K, T, r, sigma, opt_type)
+
+                        result = svc.price_option(S, K, exp_date, iv, r, q, opt_type)
+                        price  = result['price']
+                        T      = result['T']
+                        greeks = result['greeks']
                         
                         # Display results
                         self.results_text.insert(tk.END, f"Selected Option: {ticker} ${K:.2f} {opt_type.upper()}\n")
@@ -527,18 +473,14 @@ class CalculatorOperations:
             # Get risk-free rate
             r = float(self.risk_free_rate.get())
             
-            # Calculate time to expiration
-            T = yd.get_years_to_expiration(exp_date)
-            
             # Get option type
             opt_type = self.option_type.get()
-            
+
             # Get dividend yield from field
             q = InputValidator.get_dividend_yield(self.dividend_rate.get(), self.dividend_yield)
-            
-            # Calculate option price using American binomial model
-            price = bs.american_option_binomial(S, K, T, r, sigma, q=q, option_type=opt_type, steps=100)
-            
+
+            price = svc.price_option(S, K, exp_date, sigma, r, q, opt_type)['price']
+
             # Update the price display
             self.quick_date_vars[row_idx]['price'].set(f"${price:.2f}")
             
@@ -556,22 +498,18 @@ class CalculatorOperations:
             r = float(self.risk_free_rate.get())
             opt_type = self.option_type.get()
             
-            # Calculate time to expiration
-            T = yd.get_years_to_expiration(exp_date)
-            days = yd.get_days_to_expiration(exp_date)
-            
+            # Get dividend yield from field
+            q = InputValidator.get_dividend_yield(self.dividend_rate.get(), self.dividend_yield)
+
+            result = svc.price_option(S, K, exp_date, sigma, r, q, opt_type)
+            T      = result['T']
+            days   = result['days']
+            price  = result['price']
+            greeks = result['greeks']
+
             if T <= 0:
                 messagebox.showwarning("Warning", "Option has expired or expiration date is invalid")
                 return
-            
-            # Get dividend yield from field
-            q = InputValidator.get_dividend_yield(self.dividend_rate.get(), self.dividend_yield)
-            
-            # Calculate option price using American binomial model
-            price = bs.american_option_binomial(S, K, T, r, sigma, q=q, option_type=opt_type, steps=100)
-            
-            # Calculate Greeks
-            greeks = bs.calculate_greeks(S, K, T, r, sigma, opt_type)
             
             # Display results
             self.results_text.delete(1.0, tk.END)
@@ -662,27 +600,22 @@ class CalculatorOperations:
                     q = self.dividend_yield
                 
                 for i, exp_date in enumerate(dates, 1):
-                    # Calculate time to expiration
-                    T = yd.get_years_to_expiration(exp_date)
-                    days = yd.get_days_to_expiration(exp_date)
-                    
-                    if T <= 0:
-                        continue
-                    
                     # Fetch expiration-specific IV
                     exp_sigma = yd.get_atm_implied_volatility(ticker, exp_date, S, opt_type)
                     if exp_sigma is None:
-                        # Fall back to the main volatility field
                         exp_sigma = sigma
                         iv_source = "main field (fallback)"
                     else:
                         iv_source = f"market ATM IV for {exp_date}"
-                    
-                    # Calculate option price using American binomial model
-                    price = bs.american_option_binomial(S, K, T, r, exp_sigma, q=q, option_type=opt_type, steps=100)
-                    
-                    # Calculate Greeks using expiration-specific IV
-                    greeks = bs.calculate_greeks(S, K, T, r, exp_sigma, opt_type)
+
+                    result = svc.price_option(S, K, exp_date, exp_sigma, r, q, opt_type)
+                    T      = result['T']
+                    days   = result['days']
+                    price  = result['price']
+                    greeks = result['greeks']
+
+                    if T <= 0:
+                        continue
                     
                     # Display results
                     self.results_text.insert(tk.END, f"EXPIRATION #{i}: {exp_date} ({days} days)\n")
