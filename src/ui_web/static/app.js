@@ -43,6 +43,10 @@ function setupListeners() {
         r.addEventListener('change', onOptionTypeChange)
     );
 
+    $('chkAllDates').addEventListener('change', () => {
+        if (state.ticker) loadExpirations(state.ticker);
+    });
+
     // Quick-view strike inputs
     for (let i = 0; i < 3; i++) {
         $(`qstrike${i}`).addEventListener('blur',    () => recalcQuickRow(i));
@@ -181,9 +185,12 @@ async function loadStockData() {
 async function loadExpirations(ticker) {
     setStatus('Loading expiration dates…');
 
+    const allDates = $('chkAllDates').checked;
+    const url = `/api/expirations/${ticker}${allDates ? '?all=true' : ''}`;
+
     let data;
     try {
-        const resp = await fetch(`/api/expirations/${ticker}`);
+        const resp = await fetch(url);
         data = await resp.json();
         if (!resp.ok) { setStatus(`Error: ${data.error}`); return; }
     } catch (e) { setStatus(`Network error: ${e.message}`); return; }

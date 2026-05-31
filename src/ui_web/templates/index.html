@@ -54,6 +54,8 @@
         </div>
 
       </div>
+      <!-- Status feedback — visible in the top area while data is loading -->
+      <div id="statusLine" class="mt-1"></div>
     </div>
   </div>
 
@@ -87,8 +89,13 @@
           <div class="row mb-2 align-items-center">
             <label class="col-5 col-form-label col-form-label-sm"
                    for="fExpiration">Expiration</label>
-            <div class="col-7">
-              <select class="form-select form-select-sm" id="fExpiration"></select>
+            <div class="col-7 d-flex align-items-center gap-2">
+              <select class="form-select form-select-sm" id="fExpiration"
+                      style="flex:1"></select>
+              <div class="form-check mb-0 text-nowrap">
+                <input class="form-check-input" type="checkbox" id="chkAllDates">
+                <label class="form-check-label small" for="chkAllDates">All</label>
+              </div>
             </div>
           </div>
 
@@ -199,7 +206,6 @@
     <button class="btn btn-sm btn-primary" id="btnCalculate">
       Calculate Option Price
     </button>
-    <span id="statusLine"></span>
   </div>
 
   <!-- ── Results ────────────────────────────────────────────────────────────── -->

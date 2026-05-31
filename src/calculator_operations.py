@@ -15,7 +15,13 @@ from utils import ThreadingHelper, InputValidator
 
 class CalculatorOperations:
     """Mixin class containing all calculation and data operations"""
-    
+
+    def _fetch_expirations(self, ticker: str) -> dict:
+        """Return expiration dates, respecting the 'All dates' checkbox."""
+        if getattr(self, 'all_dates_var', None) and self.all_dates_var.get():
+            return yd.get_option_chain(ticker)
+        return yd.get_option_chain_next_months(ticker, months=6)
+
     def load_stock_data(self):
         """Load stock data from Yahoo Finance"""
         ticker = InputValidator.validate_ticker(self.ticker.get())
@@ -58,7 +64,7 @@ class CalculatorOperations:
                 self.results_text.insert(tk.END, "Loading option data...\n")
                 
                 # Get first available expiration date (filtered to exclude today after market close)
-                chain = yd.get_option_chain_next_months(ticker, months=6)
+                chain = self._fetch_expirations(ticker)
                 if chain['success'] and chain['expirations']:
                     first_exp = chain['expirations'][0]
                     self.expiration_date.set(first_exp)
@@ -117,7 +123,7 @@ class CalculatorOperations:
             return
         
         def fetch_dates():
-            chain = yd.get_option_chain_next_months(ticker, months=6)
+            chain = self._fetch_expirations(ticker)
             
             if chain['success']:
                 dates = chain['expirations']
@@ -335,7 +341,7 @@ class CalculatorOperations:
         self.results_text.insert(tk.END, f"\nLoading expiration dates for {ticker}...\n")
         
         def fetch_dates():
-            chain = yd.get_option_chain_next_months(ticker, months=6)
+            chain = self._fetch_expirations(ticker)
             
             if chain['success']:
                 dates = chain['expirations']
@@ -568,7 +574,7 @@ class CalculatorOperations:
             
             def calculate_multi():
                 # Get expiration dates
-                chain = yd.get_option_chain_next_months(ticker, months=6)
+                chain = self._fetch_expirations(ticker)
                 
                 if not chain['success']:
                     messagebox.showerror("Error", f"Failed to get option dates: {chain.get('error', 'Unknown error')}")

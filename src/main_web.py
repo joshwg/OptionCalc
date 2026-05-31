@@ -202,7 +202,10 @@ def api_hist_vol(ticker: str):
 @app.route("/api/expirations/<ticker>")
 def api_expirations(ticker: str):
     ticker = ticker.strip().upper()
-    chain = yd.get_option_chain_next_months(ticker, months=6)
+    if request.args.get("all", "false").lower() == "true":
+        chain = yd.get_option_chain(ticker)
+    else:
+        chain = yd.get_option_chain_next_months(ticker, months=6)
     if not chain.get("success"):
         return jsonify({"error": chain.get("error", "Failed to get expirations")}), 400
     return jsonify({"expirations": chain.get("expirations", [])})

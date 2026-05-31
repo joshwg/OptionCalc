@@ -59,6 +59,7 @@ class OptionCalculatorWindow(CalculatorOperations):
         self.dividend_yield = 0.0  # Store dividend yield as decimal (e.g., 0.02 for 2%)
         self.dividend_rate = tk.StringVar(master=self.window, value="0.00")  # Display variable for dividend rate %
         self.earnings_date = tk.StringVar(master=self.window, value="--")  # Display variable for earnings date
+        self.all_dates_var = tk.BooleanVar(master=self.window, value=False)  # Show all expirations vs 6-month window
         
         # Radio button references for bold styling
         self.call_radio = None
@@ -333,7 +334,9 @@ class OptionCalculatorWindow(CalculatorOperations):
         ttk.Label(params_frame, text="Expiration Date (YYYY-MM-DD):").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         self.expiration_combo = ttk.Combobox(params_frame, textvariable=self.expiration_date, width=13)
         self.expiration_combo.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Button(params_frame, text="Load Dates (6mo)", command=self.load_expiration_dates).grid(row=1, column=2, padx=5, pady=5)
+        ttk.Checkbutton(params_frame, text="All", variable=self.all_dates_var,
+                        command=self.load_expiration_dates).grid(row=1, column=2, sticky=tk.W, padx=5)
+        ttk.Button(params_frame, text="Load Dates", command=self.load_expiration_dates).grid(row=1, column=3, padx=5, pady=5)
         
         ttk.Label(params_frame, text="Strike Price:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
         self.strike_combo = ttk.Combobox(params_frame, textvariable=self.strike_price, width=13)
