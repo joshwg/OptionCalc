@@ -100,11 +100,14 @@
           <div class="row mb-2 align-items-center">
             <label class="col-5 col-form-label col-form-label-sm"
                    for="fStrike">Strike Price</label>
-            <div class="col-7">
-              <input type="number" class="form-control form-control-sm" id="fStrike"
-                     list="strikeList" step="0.5" min="0" placeholder="e.g. 190"
-                     title="Option strike price. Pick from the list or type any strike. Selecting a listed strike auto-fills the implied volatility from the market bid/ask midpoint.">
-              <datalist id="strikeList"></datalist>
+            <div class="col-7 d-flex align-items-center gap-1">
+              <select class="form-select form-select-sm" id="fStrike"
+                      style="flex:1"
+                      title="Option strike price. Choosing a new strike auto-fills the implied volatility computed from the market bid/ask midpoint."></select>
+              <input type="number" class="form-control form-control-sm" id="fStrikeCustom"
+                     step="0.5" min="1" placeholder="custom"
+                     style="width:74px"
+                     title="Type any strike not in the list (overrides the dropdown)">
             </div>
           </div>
 
@@ -146,11 +149,23 @@
             </div>
           </div>
 
-          <!-- Calculated fair price -->
+          <!-- Calculated fair price + greeks -->
           <div class="row align-items-center mt-1">
             <label class="col-5 col-form-label col-form-label-sm">Fair Price</label>
             <div class="col-7">
               <strong id="lblCalcPrice" class="oc-price">--</strong>
+            </div>
+          </div>
+          <div class="row align-items-center mt-1">
+            <label class="col-5 col-form-label col-form-label-sm">Delta (Δ)</label>
+            <div class="col-7">
+              <span id="lblDelta" class="text-muted small">--</span>
+            </div>
+          </div>
+          <div class="row align-items-center mt-1">
+            <label class="col-5 col-form-label col-form-label-sm">Theta (Θ)</label>
+            <div class="col-7">
+              <span id="lblTheta" class="text-muted small">--</span>
             </div>
           </div>
 

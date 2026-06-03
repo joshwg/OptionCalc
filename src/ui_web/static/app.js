@@ -35,7 +35,7 @@ function setupListeners() {
     $('fPrice').addEventListener('input', debounceRecalc);
     $('fExpiration').addEventListener('change', onExpirationChange);
     $('fStrike').addEventListener('change', onStrikeChange);
-    $('fStrike').addEventListener('input',  debounceRecalc);
+    $('fStrikeCustom').addEventListener('input', debounceRecalc);
     $('fVolatility').addEventListener('input', debounceRecalc);
     $('fRiskFree').addEventListener('input', debounceRecalc);
     $('fDividend').addEventListener('input', debounceRecalc);
@@ -238,22 +238,24 @@ async function onExpirationChange() {
 
     const strikes = chainData.map(o => o.strike).sort((a, b) => a - b);
 
-    // Populate the datalist so listed strikes appear as suggestions
-    $('strikeList').innerHTML = strikes
-        .map(s => `<option value="${s.toFixed(2)}">`)
+    // Populate the dropdown with all listed strikes
+    const strikeEl = $('fStrike');
+    strikeEl.innerHTML = strikes
+        .map(s => `<option value="${s}">${s.toFixed(2)}</option>`)
         .join('');
 
-    // Keep any previously entered strike (including custom ones not in the chain);
-    // fall back to the nearest listed strike at or above ATM.
-    const strikeEl  = $('fStrike');
-    const prevStrike = parseFloat(prevStrikeStr);
+    // Try to keep the previous listed strike; fall back to nearest at or above ATM
     let selectedStrike;
-    if (!isNaN(prevStrike) && prevStrike > 0) {
-        selectedStrike = prevStrike;
-    } else {
-        selectedStrike = strikes.find(s => s >= S) ?? strikes[strikes.length - 1];
+    if (prevStrikeStr) {
+        strikeEl.value = prevStrikeStr;
+        if (strikeEl.value === prevStrikeStr) {
+            selectedStrike = parseFloat(prevStrikeStr);
+        }
     }
-    strikeEl.value = selectedStrike.toFixed(2);
+    if (!selectedStrike || isNaN(selectedStrike)) {
+        selectedStrike = strikes.find(s => s >= S) ?? strikes[strikes.length - 1];
+        strikeEl.value = selectedStrike;
+    }
 
     // Compute IV for selected strike
     const opt = chainData.find(o => o.strike === selectedStrike);
@@ -269,7 +271,7 @@ async function onExpirationChange() {
 }
 
 async function onStrikeChange() {
-    const strike  = parseFloat($('fStrike').value);
+    const strike  = getStrike();
     const exp     = $('fExpiration').value;
     const optType = getOptType();
     const S       = parseFloat($('fPrice').value);
@@ -350,7 +352,7 @@ async function loadQuickView() {
     const optType    = getOptType();
     const S          = state.S;
     const r          = parseFloat($('fRiskFree').value);
-    const mainStrike = parseFloat($('fStrike').value) || null;
+    const mainStrike = getStrike() || null;
     const first3     = state.expirations.slice(0, 3);
 
     state.quickIVs = [null, null, null];
@@ -435,7 +437,7 @@ function debounceRecalc() {
 
 async function doRecalc() {
     const S       = parseFloat($('fPrice').value);
-    const K       = parseFloat($('fStrike').value);
+    const K       = getStrike();
     const exp     = $('fExpiration').value;
     const sigma   = parseFloat($('fVolatility').value) / 100;
     const r       = parseFloat($('fRiskFree').value);
@@ -443,7 +445,10 @@ async function doRecalc() {
     const optType = getOptType();
 
     if (!S || !K || !exp || !sigma || isNaN(r) || isNaN(q)) {
-        $('lblCalcPrice').textContent = '--'; return;
+        $('lblCalcPrice').textContent = '--';
+        $('lblDelta').textContent = '--';
+        $('lblTheta').textContent = '--';
+        return;
     }
 
     try {
@@ -455,6 +460,12 @@ async function doRecalc() {
         if (!resp.ok) return;
         const data = await resp.json();
         $('lblCalcPrice').textContent = `$${data.price.toFixed(2)}`;
+        $('lblDelta').textContent = data.greeks?.delta != null
+            ? data.greeks.delta.toFixed(4)
+            : '--';
+        $('lblTheta').textContent = data.greeks?.theta != null
+            ? `$${data.greeks.theta.toFixed(4)} / day`
+            : '--';
     } catch (_) { /* ignore */ }
 }
 
@@ -464,7 +475,7 @@ async function doRecalc() {
 
 async function calculateFull() {
     const S       = parseFloat($('fPrice').value);
-    const K       = parseFloat($('fStrike').value);
+    const K       = getStrike();
     const exp     = $('fExpiration').value;
     const sigma   = parseFloat($('fVolatility').value) / 100;
     const r       = parseFloat($('fRiskFree').value);
@@ -523,6 +534,10 @@ async function calculateFull() {
 
     $('resultsText').textContent = lines.join('\n');
     $('lblCalcPrice').textContent = `$${data.price.toFixed(2)}`;
+    $('lblDelta').textContent = g.delta != null ? g.delta.toFixed(4) : '--';
+    $('lblTheta').textContent = g.theta != null
+        ? `$${g.theta.toFixed(4)} / day`
+        : '--';
 }
 
 // ============================================================
@@ -555,6 +570,13 @@ async function calcHistVol() {
 
 function getOptType() {
     return document.querySelector('input[name="optType"]:checked').value;
+}
+
+/** Return the effective strike: custom input if filled, else the dropdown. */
+function getStrike() {
+    const custom = parseFloat($('fStrikeCustom').value);
+    if (!isNaN(custom) && custom > 0) return custom;
+    return parseFloat($('fStrike').value);
 }
 
 function setStatus(msg) {
