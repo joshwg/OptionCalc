@@ -101,8 +101,10 @@
             <label class="col-5 col-form-label col-form-label-sm"
                    for="fStrike">Strike Price</label>
             <div class="col-7">
-              <select class="form-select form-select-sm" id="fStrike"
-                      title="Option strike price. Choosing a new strike auto-fills the implied volatility computed from the market bid/ask midpoint."></select>
+              <input type="number" class="form-control form-control-sm" id="fStrike"
+                     list="strikeList" step="0.5" min="0" placeholder="e.g. 190"
+                     title="Option strike price. Pick from the list or type any strike. Selecting a listed strike auto-fills the implied volatility from the market bid/ask midpoint.">
+              <datalist id="strikeList"></datalist>
             </div>
           </div>
 

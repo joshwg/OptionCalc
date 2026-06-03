@@ -50,6 +50,11 @@ app.secret_key = hashlib.sha256(_password.encode()).digest()
 
 @app.errorhandler(Exception)
 def handle_exception(e):
+    from werkzeug.exceptions import HTTPException
+    # Let Flask return proper 4xx responses for routing/protocol errors
+    # (e.g. 404 Not Found, 400 Bad Request for malformed URLs or bad JSON).
+    if isinstance(e, HTTPException):
+        return e
     import traceback
     app.logger.error(traceback.format_exc())
     return jsonify({"error": str(e)}), 500
@@ -257,7 +262,10 @@ def api_atm_iv(ticker: str, expiration: str, opt_type: str):
 
 @app.route("/api/calculate", methods=["POST"])
 def api_calculate():
+    import math
     d = request.json
+    if not isinstance(d, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
     try:
         S        = float(d["S"])
         K        = float(d["K"])
@@ -268,6 +276,19 @@ def api_calculate():
         opt_type = d.get("option_type", "call").lower()
     except (ValueError, TypeError, KeyError) as e:
         return jsonify({"error": f"Invalid input: {e}"}), 400
+
+    # Reject non-finite or non-positive values that would crash the pricer
+    for name, val in [("S", S), ("K", K), ("sigma", sigma), ("r", r), ("q", q)]:
+        if not math.isfinite(val):
+            return jsonify({"error": f"{name} must be a finite number"}), 400
+    if S <= 0:
+        return jsonify({"error": "S (stock price) must be positive"}), 400
+    if K <= 0:
+        return jsonify({"error": "K (strike price) must be positive"}), 400
+    if sigma < 0:
+        return jsonify({"error": "sigma (volatility) must be non-negative"}), 400
+    if opt_type not in ("call", "put"):
+        return jsonify({"error": "option_type must be 'call' or 'put'"}), 400
 
     result = svc.price_option(S, K, exp, sigma, r, q, opt_type)
     if result["T"] <= 0:

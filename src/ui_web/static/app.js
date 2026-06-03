@@ -35,6 +35,7 @@ function setupListeners() {
     $('fPrice').addEventListener('input', debounceRecalc);
     $('fExpiration').addEventListener('change', onExpirationChange);
     $('fStrike').addEventListener('change', onStrikeChange);
+    $('fStrike').addEventListener('input',  debounceRecalc);
     $('fVolatility').addEventListener('input', debounceRecalc);
     $('fRiskFree').addEventListener('input', debounceRecalc);
     $('fDividend').addEventListener('input', debounceRecalc);
@@ -222,6 +223,9 @@ async function onExpirationChange() {
 
     if (!exp || !state.ticker || !S) return;
 
+    // Remember current strike before repopulating so we can try to preserve it
+    const prevStrikeStr = $('fStrike').value;
+
     setStatus(`Loading options for ${exp}…`);
 
     const chain = await loadChain(state.ticker, exp);
@@ -234,20 +238,27 @@ async function onExpirationChange() {
 
     const strikes = chainData.map(o => o.strike).sort((a, b) => a - b);
 
-    // Populate strike dropdown
-    const strikeEl = $('fStrike');
-    strikeEl.innerHTML = strikes
-        .map(s => `<option value="${s}">${s.toFixed(2)}</option>`)
+    // Populate the datalist so listed strikes appear as suggestions
+    $('strikeList').innerHTML = strikes
+        .map(s => `<option value="${s.toFixed(2)}">`)
         .join('');
 
-    // Best strike: nearest at or above ATM
-    const bestStrike = strikes.find(s => s >= S) ?? strikes[strikes.length - 1];
-    strikeEl.value = bestStrike;
+    // Keep any previously entered strike (including custom ones not in the chain);
+    // fall back to the nearest listed strike at or above ATM.
+    const strikeEl  = $('fStrike');
+    const prevStrike = parseFloat(prevStrikeStr);
+    let selectedStrike;
+    if (!isNaN(prevStrike) && prevStrike > 0) {
+        selectedStrike = prevStrike;
+    } else {
+        selectedStrike = strikes.find(s => s >= S) ?? strikes[strikes.length - 1];
+    }
+    strikeEl.value = selectedStrike.toFixed(2);
 
-    // Compute IV for best strike
-    const opt = chainData.find(o => o.strike === bestStrike);
+    // Compute IV for selected strike
+    const opt = chainData.find(o => o.strike === selectedStrike);
     if (opt) {
-        const iv = await computeIV(opt, bestStrike, S, chain.T, r, optType);
+        const iv = await computeIV(opt, selectedStrike, S, chain.T, r, optType);
         if (iv && iv > 0) {
             $('fVolatility').value = (iv * 100).toFixed(2);
         }

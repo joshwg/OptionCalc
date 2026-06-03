@@ -7,8 +7,10 @@ Black-Scholes/Binomial Tree option pricing tool. All pricing logic and market da
 ```
 OptionCalculator/
 ├── src/            all Python source code + web UI assets
+│   └── tests/      automated test suite (pytest)
 ├── data/           persistent config (config.json) — gitignored
 ├── venv/           Python virtual environment
+├── pytest.ini      pytest configuration
 └── requirements.txt
 ```
 
@@ -18,6 +20,7 @@ OptionCalculator/
 src/
   yahoo_data.py             # Yahoo Finance data: prices, option chains, IV, volatility
   option_pricing.py         # Pricing models: Black-Scholes, Binomial Tree, Greeks
+  option_service.py         # Shared business logic (pricing, strike selection)
   main.py                   # Desktop app entry point (Tkinter)
   calculator_window.py      # Tkinter UI
   calculator_operations.py  # Business logic for desktop app
@@ -28,6 +31,15 @@ src/
     templates/index.html    # Bootstrap 5 single-page app
     static/app.js           # Frontend JavaScript
     static/style.css        # Custom styles
+  tests/
+    conftest.py             # pytest fixtures and sys.path setup
+    test_option_pricing.py  # BS, binomial, greeks, IV, monotonicity
+    test_option_service.py  # service layer: price_option, strike selection
+    test_normalization.py   # dividend/IV normalisation + date utilities
+    test_config_manager.py  # load/save, geometry parsing, concurrency
+    test_input_validator.py # ticker, float, date, required-field validators
+    test_web_api.py         # Flask endpoints (mocked dependencies)
+    test_web_security.py    # auth, session expiry, input sanitisation, boundaries
 ```
 
 ## Running
@@ -59,12 +71,33 @@ DEFAULT_VOLATILITY=0.30
 
 ## Tests
 
+All tests live in `src/tests/` and run via pytest (configured in `pytest.ini`).
+
 ```bash
-PYTHONPATH=src venv/bin/python src/test_option_pricing.py
-PYTHONPATH=src venv/bin/python src/test_yahoo_data.py
-PYTHONPATH=src venv/bin/python src/test_dividend_normalization.py
-PYTHONPATH=src venv/bin/python src/test_ticker_search.py
+# Run the full suite (from the project root)
+PYTHONPATH=src:/mnt/c/Users/josh/Docs/lab venv/bin/python -m pytest
+
+# Run a specific file
+PYTHONPATH=src:/mnt/c/Users/josh/Docs/lab venv/bin/python -m pytest src/tests/test_option_pricing.py
+
+# Skip slow binomial-convergence tests
+PYTHONPATH=src:/mnt/c/Users/josh/Docs/lab venv/bin/python -m pytest -m "not slow"
+
+# Skip live-network tests (none by default; add @pytest.mark.network to new ones)
+PYTHONPATH=src:/mnt/c/Users/josh/Docs/lab venv/bin/python -m pytest -m "not network"
 ```
+
+Test files and what they cover:
+
+| File | Coverage |
+|---|---|
+| `test_option_pricing.py` | Black-Scholes, binomial tree, greeks, IV round-trip, put-call parity, monotonicity |
+| `test_option_service.py` | `price_option`, `find_atm_strike_with_iv`, `atm_strikes_window`, post-earnings expiry, `iv_for_strike` |
+| `test_normalization.py` | `normalize_dividend_yield`, `normalize_implied_volatility`, date utilities |
+| `test_config_manager.py` | load/save round-trip, defaults merge, geometry parsing/validation, concurrent writes |
+| `test_input_validator.py` | ticker, float (with bounds), date, required-fields, dividend-yield helpers |
+| `test_web_api.py` | All Flask endpoints with mocked external calls; calculate/IV endpoint math |
+| `test_web_security.py` | Auth bypass, session expiry, login brute-force, XSS/path-traversal inputs, boundary values, payload hardening |
 
 ## Key Notes
 
