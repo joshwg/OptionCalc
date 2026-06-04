@@ -46,6 +46,8 @@ rm -f "$OUT"
 # artifacts are intentionally omitted to keep the bundle lean.
 tar -czf "$OUT" \
     --exclude='.git' \
+    --exclude='.gitignore' \
+    --exclude='.pytest_cache' \
     --exclude='__pycache__' \
     --exclude='*.pyc' \
     --exclude='*.pyo' \

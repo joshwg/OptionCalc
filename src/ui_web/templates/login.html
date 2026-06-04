@@ -11,6 +11,9 @@
   <div class="card shadow-sm" style="width:320px">
     <div class="card-body p-4">
       <h5 class="card-title text-center mb-4">Option Calculator</h5>
+      <div id="expiredMsg" class="alert alert-warning py-1 small" style="display:none">
+        Your session has expired. Please log in again.
+      </div>
       {% if error %}
       <div class="alert alert-danger py-1 small">{{ error }}</div>
       {% endif %}
@@ -35,6 +38,10 @@
     </div>
   </div>
 <script>
+  if (new URLSearchParams(window.location.search).get('expired') === '1') {
+    document.getElementById('expiredMsg').style.display = '';
+  }
+
   document.getElementById('togglePassword').addEventListener('click', () => {
     const input   = document.getElementById('passwordInput');
     const icon    = document.getElementById('eyeIcon');

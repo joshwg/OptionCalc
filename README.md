@@ -106,12 +106,29 @@ python main.py
 ```
 
 ### Testing
+
+Tests live in `src/tests/` and run via pytest:
+
 ```bash
-python test_option_pricing.py
-python test_yahoo_data.py
-python test_dividend_normalization.py
-python test_ticker_search.py
+# Run the full suite
+PYTHONPATH=src venv/bin/python -m pytest
+
+# Run a specific file
+PYTHONPATH=src venv/bin/python -m pytest src/tests/test_option_pricing.py
+
+# Skip slow binomial-convergence tests
+PYTHONPATH=src venv/bin/python -m pytest -m "not slow"
 ```
+
+| Test file | Coverage |
+|---|---|
+| `test_option_pricing.py` | Black-Scholes, binomial tree, Greeks, IV round-trip, put-call parity |
+| `test_option_service.py` | `price_option`, strike selection, IV lookup |
+| `test_normalization.py` | Dividend/IV normalisation, date utilities |
+| `test_config_manager.py` | Load/save, defaults, geometry parsing, concurrent writes |
+| `test_input_validator.py` | Ticker, float, date, required-field validators |
+| `test_web_api.py` | Flask endpoints with mocked dependencies |
+| `test_web_security.py` | Auth, session expiry, XSS/path-traversal, boundary values |
 
 ## 🎮 Usage
 

@@ -61,12 +61,25 @@ function setupListeners() {
 }
 
 // ============================================================
+// Auth helper — redirect to login on session expiry
+// ============================================================
+
+async function apiFetch(url, opts) {
+    const resp = await fetch(url, opts);
+    if (resp.status === 401) {
+        window.location.href = '/login?expired=1';
+        return new Promise(() => {});  // never resolves — callers stop
+    }
+    return resp;
+}
+
+// ============================================================
 // Config
 // ============================================================
 
 async function loadConfig() {
     try {
-        const resp = await fetch('/api/config');
+        const resp = await apiFetch('/api/config');
         if (!resp.ok) return;
         const cfg = await resp.json();
         $('fRiskFree').value = cfg.risk_free_rate ?? 0.045;
@@ -76,7 +89,7 @@ async function loadConfig() {
 async function saveConfig() {
     const r = parseFloat($('fRiskFree').value);
     if (isNaN(r)) { alert('Enter a valid risk-free rate (decimal, e.g. 0.045).'); return; }
-    const resp = await fetch('/api/config', {
+    const resp = await apiFetch('/api/config', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ risk_free_rate: r }),
@@ -108,7 +121,7 @@ function onTickerInput() {
 
 async function doTickerSearch(query) {
     try {
-        const resp = await fetch(`/api/search/${encodeURIComponent(query)}`);
+        const resp = await apiFetch(`/api/search/${encodeURIComponent(query)}`);
         if (!resp.ok) { hideSuggestions(); return; }
         const results = await resp.json();
         renderSuggestions(results);
@@ -152,7 +165,7 @@ async function loadStockData() {
 
     let data;
     try {
-        const resp = await fetch(`/api/stock/${ticker}`);
+        const resp = await apiFetch(`/api/stock/${ticker}`);
         data = await resp.json();
         if (!resp.ok) { setStatus(`Error: ${data.error || 'Failed to load'}`); return; }
     } catch (e) { setStatus(`Network error: ${e.message}`); return; }
@@ -191,7 +204,7 @@ async function loadExpirations(ticker) {
 
     let data;
     try {
-        const resp = await fetch(url);
+        const resp = await apiFetch(url);
         data = await resp.json();
         if (!resp.ok) { setStatus(`Error: ${data.error}`); return; }
     } catch (e) { setStatus(`Network error: ${e.message}`); return; }
@@ -315,7 +328,7 @@ async function onOptionTypeChange() {
 async function loadChain(ticker, exp) {
     if (state.chains[exp]) return state.chains[exp];
     try {
-        const resp = await fetch(`/api/options/${ticker}/${exp}`);
+        const resp = await apiFetch(`/api/options/${ticker}/${exp}`);
         if (!resp.ok) return null;
         const data = await resp.json();
         state.chains[exp] = data;
@@ -328,7 +341,7 @@ async function computeIV(opt, K, S, T, r, optType) {
     if (opt.bid > 0 && opt.ask > 0 && T > 0) {
         const mid = (opt.bid + opt.ask) / 2;
         try {
-            const resp = await fetch('/api/iv', {
+            const resp = await apiFetch('/api/iv', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify({ market_price: mid, S, K, T, r, option_type: optType }),
@@ -376,7 +389,7 @@ async function loadQuickView() {
 async function fetchQuickRowIV(rowIdx, exp, optType, S, r) {
     try {
         const params = new URLSearchParams({ S, r });
-        const resp = await fetch(`/api/atm-iv/${state.ticker}/${exp}/${optType}?${params}`);
+        const resp = await apiFetch(`/api/atm-iv/${state.ticker}/${exp}/${optType}?${params}`);
         if (!resp.ok) throw new Error('bad response');
         const data  = await resp.json();
         const iv    = data.atm_iv;
@@ -406,7 +419,7 @@ async function calcQuickRowPrice(rowIdx, exp) {
     }
 
     try {
-        const resp = await fetch('/api/calculate', {
+        const resp = await apiFetch('/api/calculate', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ S, K, expiration: exp, sigma, r, q, option_type: optType }),
@@ -452,7 +465,7 @@ async function doRecalc() {
     }
 
     try {
-        const resp = await fetch('/api/calculate', {
+        const resp = await apiFetch('/api/calculate', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ S, K, expiration: exp, sigma, r, q, option_type: optType }),
@@ -490,7 +503,7 @@ async function calculateFull() {
 
     let data;
     try {
-        const resp = await fetch('/api/calculate', {
+        const resp = await apiFetch('/api/calculate', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ S, K, expiration: exp, sigma, r, q, option_type: optType }),
@@ -552,7 +565,7 @@ async function calcHistVol() {
 
     let data;
     try {
-        const resp = await fetch(`/api/hist-vol/${ticker}`);
+        const resp = await apiFetch(`/api/hist-vol/${ticker}`);
         data = await resp.json();
         if (!resp.ok) { setStatus(`Error: ${data.error}`); return; }
     } catch (e) { setStatus(`Network error: ${e.message}`); return; }
