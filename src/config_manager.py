@@ -1,43 +1,34 @@
 """
 Configuration and Window Geometry Management Utilities
+
+App settings (risk_free_rate etc.) are delegated to config.py / optioncalculator.cfg.
+This module adds Tkinter window-geometry management on top.
 """
 
-import json
-import os
 import re
-import threading
 
-# data/ lives one level above src/ (i.e. at the project root)
-_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-os.makedirs(_DATA_DIR, exist_ok=True)  # ensure data/ exists on first run
+import config as _cfg
+
+
+# GUI-only defaults not stored in the .cfg file
+_GUI_DEFAULTS = {
+    'font_size': 14,
+}
 
 
 class ConfigManager:
-    """Manages application configuration and window geometry"""
+    """Manages Tkinter window geometry; delegates app config to config.py."""
 
-    CONFIG_FILE = os.path.join(_DATA_DIR, "config.json")
-    _write_lock = threading.Lock()
-
-    DEFAULT_CONFIG = {
-        'risk_free_rate': 0.045,
-        'font_size': 14,
-    }
-    
     @staticmethod
     def load_config():
-        """Load configuration from JSON file"""
-        if os.path.exists(ConfigManager.CONFIG_FILE):
-            with open(ConfigManager.CONFIG_FILE, 'r') as f:
-                loaded_config = json.load(f)
-            return {**ConfigManager.DEFAULT_CONFIG, **loaded_config}
-        return dict(ConfigManager.DEFAULT_CONFIG)
-    
+        """Return merged app config + GUI defaults."""
+        cfg = _cfg.load_config()
+        return {**_GUI_DEFAULTS, **cfg}
+
     @staticmethod
     def save_config(config):
-        """Save configuration to JSON file"""
-        with ConfigManager._write_lock:
-            with open(ConfigManager.CONFIG_FILE, 'w') as f:
-                json.dump(config, f, indent=2)
+        """Persist app settings (non-GUI keys) via config.py."""
+        _cfg.save_config({k: v for k, v in config.items() if k in _cfg.DEFAULTS})
     
     @staticmethod
     def is_geometry_valid(x, y, width, height):

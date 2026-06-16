@@ -16,13 +16,13 @@ from flask import (Flask, jsonify, redirect, render_template,
 
 import yahoo_data as yd
 import option_service as svc
-from config_manager import ConfigManager
+import config as _cfg
 
 # ---------------------------------------------------------------------------
 # Auth setup — OPTION_PWD must be set before the server starts
 # ---------------------------------------------------------------------------
 
-_SESSION_TIMEOUT_MINUTES = 120
+_SESSION_TIMEOUT_MINUTES = 240
 
 
 def _require_password() -> str:
@@ -147,8 +147,8 @@ def index():
 
 @app.route("/api/config")
 def api_get_config():
-    config = ConfigManager.load_config()
-    return jsonify({"risk_free_rate": config.get("risk_free_rate", 0.045)})
+    cfg = _cfg.load_config()
+    return jsonify({"risk_free_rate": cfg.get("risk_free_rate", 0.045)})
 
 
 @app.route("/api/config", methods=["POST"])
@@ -158,9 +158,9 @@ def api_save_config():
         r = float(d["risk_free_rate"])
     except (ValueError, KeyError, TypeError):
         return jsonify({"error": "invalid value"}), 400
-    config = ConfigManager.load_config()
-    config["risk_free_rate"] = r
-    ConfigManager.save_config(config)
+    cfg = _cfg.load_config()
+    cfg["risk_free_rate"] = r
+    _cfg.save_config(cfg)
     return jsonify({"ok": True})
 
 
@@ -277,7 +277,7 @@ def api_calculate():
     except (ValueError, TypeError, KeyError) as e:
         return jsonify({"error": f"Invalid input: {e}"}), 400
 
-    # Reject non-finite or non-positive values that would crash the pricer
+    # Reject non-finite or invalid values that would crash the pricer
     for name, val in [("S", S), ("K", K), ("sigma", sigma), ("r", r), ("q", q)]:
         if not math.isfinite(val):
             return jsonify({"error": f"{name} must be a finite number"}), 400
@@ -287,12 +287,15 @@ def api_calculate():
         return jsonify({"error": "K (strike price) must be positive"}), 400
     if sigma < 0:
         return jsonify({"error": "sigma (volatility) must be non-negative"}), 400
+    if sigma == 0:
+        return jsonify({"error": "sigma (volatility) is zero — IV was not resolved for this strike"}), 400
     if opt_type not in ("call", "put"):
         return jsonify({"error": "option_type must be 'call' or 'put'"}), 400
+    if not exp:
+        return jsonify({"error": "expiration date is required"}), 400
 
+    # T=0 is a valid 0DTE option: the pricer returns intrinsic value.
     result = svc.price_option(S, K, exp, sigma, r, q, opt_type)
-    if result["T"] <= 0:
-        return jsonify({"error": "Option has expired or expiration date is invalid"}), 400
     return jsonify(result)
 
 

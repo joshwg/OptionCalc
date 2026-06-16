@@ -67,7 +67,10 @@ function setupListeners() {
 async function apiFetch(url, opts) {
     const resp = await fetch(url, opts);
     if (resp.status === 401) {
-        window.location.href = '/login?expired=1';
+        document.querySelectorAll('.oc-app input, .oc-app button, .oc-app select')
+            .forEach(el => { el.disabled = true; });
+        setStatus('Session expired — you have been logged out. Redirecting…');
+        setTimeout(() => { window.location.href = '/login?expired=1'; }, SESSION_EXPIRED_REDIRECT_MS);
         return new Promise(() => {});  // never resolves — callers stop
     }
     return resp;
@@ -97,7 +100,7 @@ async function saveConfig() {
     if (resp.ok) {
         const msg = $('cfgSavedMsg');
         msg.style.display = 'inline';
-        setTimeout(() => { msg.style.display = 'none'; }, 2000);
+        setTimeout(() => { msg.style.display = 'none'; }, SAVED_MSG_DISMISS_MS);
     }
 }
 
@@ -116,7 +119,7 @@ function onTickerInput() {
     const q = this.value.trim();
     if (_tickerTimer) clearTimeout(_tickerTimer);
     if (q.length < 1) { hideSuggestions(); return; }
-    _tickerTimer = setTimeout(() => doTickerSearch(q), 400);
+    _tickerTimer = setTimeout(() => doTickerSearch(q), TICKER_SEARCH_DELAY_MS);
 }
 
 async function doTickerSearch(query) {
@@ -270,13 +273,23 @@ async function onExpirationChange() {
         strikeEl.value = selectedStrike;
     }
 
-    // Compute IV for selected strike
+    // Compute IV for selected strike; fall back to ATM IV if the strike has no
+    // usable bid/ask (e.g. deep OTM strikes with zero markets on low-price stocks).
     const opt = chainData.find(o => o.strike === selectedStrike);
-    if (opt) {
-        const iv = await computeIV(opt, selectedStrike, S, chain.T, r, optType);
-        if (iv && iv > 0) {
-            $('fVolatility').value = (iv * 100).toFixed(2);
-        }
+    let iv = opt ? await computeIV(opt, selectedStrike, S, chain.T, r, optType) : null;
+    if (!iv || iv <= 0) {
+        try {
+            const resp = await apiFetch(
+                `/api/atm-iv/${state.ticker}/${exp}/${optType}?S=${S}&r=${r}`
+            );
+            if (resp.ok) {
+                const d = await resp.json();
+                if (d.atm_iv && d.atm_iv > 0) iv = d.atm_iv;
+            }
+        } catch (_) { /* leave iv null */ }
+    }
+    if (iv && iv > 0) {
+        $('fVolatility').value = (iv * 100).toFixed(2);
     }
 
     setStatus(`${strikes.length} strikes for ${exp}`);
@@ -317,7 +330,8 @@ async function onStrikeChange() {
 async function onOptionTypeChange() {
     const exp = $('fExpiration').value;
     if (exp && state.ticker) {
-        await onExpirationChange();  // repopulate strikes + best IV for new type
+        $('fVolatility').value = '';   // stale IV from the previous type; force re-resolve
+        await onExpirationChange();    // repopulate strikes + best IV for new type
     } else {
         debounceRecalc();
     }
@@ -397,6 +411,14 @@ async function fetchQuickRowIV(rowIdx, exp, optType, S, r) {
         if (iv && iv > 0) {
             state.quickIVs[rowIdx]          = iv;
             $(`qiv${rowIdx}`).textContent   = `${(iv * 100).toFixed(1)}%`;
+            // If this row matches the currently selected expiry and fVolatility
+            // is still empty (per-strike IV lookup failed), back-fill it now so
+            // the fair-price display uses the same IV as the quick view.
+            if (rowIdx === 0 && exp === $('fExpiration').value
+                    && !parseFloat($('fVolatility').value)) {
+                $('fVolatility').value = (iv * 100).toFixed(2);
+                debounceRecalc();
+            }
         } else {
             $(`qiv${rowIdx}`).textContent   = '--';
         }
@@ -424,7 +446,12 @@ async function calcQuickRowPrice(rowIdx, exp) {
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ S, K, expiration: exp, sigma, r, q, option_type: optType }),
         });
-        if (!resp.ok) throw new Error('calc error');
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            setStatus(`Error: ${err.error || 'calculation failed'}`);
+            $(`qprice${rowIdx}`).textContent = '--';
+            return;
+        }
         const data = await resp.json();
         $(`qprice${rowIdx}`).textContent = `$${data.price.toFixed(2)}`;
     } catch (_) {
@@ -470,7 +497,11 @@ async function doRecalc() {
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ S, K, expiration: exp, sigma, r, q, option_type: optType }),
         });
-        if (!resp.ok) return;
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            setStatus(`Error: ${err.error || 'calculation failed'}`);
+            return;
+        }
         const data = await resp.json();
         $('lblCalcPrice').textContent = `$${data.price.toFixed(2)}`;
         $('lblDelta').textContent = data.greeks?.delta != null
