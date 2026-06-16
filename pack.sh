@@ -3,22 +3,27 @@
 #
 # Creates ../OptionCalculator.tgz containing:
 #
-#   OptionCalculator/          web server source only (no desktop files or tests)
+#   OptionCalculator/
 #     requirements.txt
-#     src/  (excluding calculator_*.py main.py utils/ tests/)
-#   option_lib/                shared pricing + data library (sibling directory)
+#     src/
+#       main_web.py
+#       option_pricing.py
+#       option_service.py
+#       config.py
+#       config_manager.py
+#       yahoo_data.py
+#       ui_web/            (templates + static assets)
+#   option_lib/
+#     pyproject.toml
+#     option_lib/          (the installable package)
 #
 # Deploy on the server:
 #   tar -xzf OptionCalculator.tgz
-#   cd OptionCalculator/src
-#   pip install -r ../requirements.txt
-#   pip install ../../option_lib
+#   pip install ./option_lib
+#   pip install -r OptionCalculator/requirements.txt
 #   export OPTION_PWD=yourpassword
-#   python main_web.py                              # Flask dev server (port 5001)
-#
-#   # Production (gunicorn):
-#   OPTION_PWD=yourpassword \
-#     gunicorn --bind 0.0.0.0:5001 main_web:app
+#   cd OptionCalculator/src
+#   gunicorn --bind 0.0.0.0:5001 main_web:app
 #
 set -euo pipefail
 
@@ -26,38 +31,59 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="$(basename "$SCRIPT_DIR")"
 PARENT="$(dirname "$SCRIPT_DIR")"
 OUT="$PARENT/$PROJECT.tgz"
+SRC="$SCRIPT_DIR/src"
+OPT_LIB="$PARENT/option_lib"
 
-if [[ ! -d "$PARENT/option_lib" ]]; then
-    echo "ERROR: option_lib not found at $PARENT/option_lib" >&2
+if [[ ! -d "$OPT_LIB" ]]; then
+    echo "ERROR: option_lib not found at $OPT_LIB" >&2
     exit 1
 fi
 
 rm -f "$OUT"
 
-tar -czf "$OUT" \
-    --exclude='.git' \
-    --exclude='.gitignore' \
-    --exclude='venv' \
-    --exclude='__pycache__' \
-    --exclude='*.pyc' \
-    --exclude='*.pyo' \
-    --exclude='*.egg-info' \
-    --exclude='*.bat' \
-    --exclude='.pytest_cache' \
-    --exclude='*/.pytest_cache' \
-    --exclude='OptionCalculator/src/calculator_*.py' \
-    --exclude='OptionCalculator/src/main.py' \
-    --exclude='OptionCalculator/src/utils' \
-    --exclude='OptionCalculator/src/tests' \
-    -C "$PARENT" \
-    "$PROJECT" \
-    option_lib
+# ── Web server source files ────────────────────────────────────────────────
+WEB_SRC_FILES=(
+    main_web.py
+    option_pricing.py
+    option_service.py
+    config.py
+    config_manager.py
+    yahoo_data.py
+)
+
+# Build the tar from an explicit file list so nothing unintended sneaks in.
+{
+    # OptionCalculator/requirements.txt
+    echo "$PROJECT/requirements.txt"
+
+    # OptionCalculator/src/<file>
+    for f in "${WEB_SRC_FILES[@]}"; do
+        echo "$PROJECT/src/$f"
+    done
+
+    # OptionCalculator/src/ui_web/ (all templates + static assets)
+    find "$SRC/ui_web" -type f \
+        ! -name '*.pyc' \
+        ! -name '*.pyo' \
+        ! -path '*/__pycache__/*' \
+        | sed "s|$PARENT/||"
+
+    # option_lib/pyproject.toml + the package directory
+    echo "option_lib/pyproject.toml"
+    find "$OPT_LIB/option_lib" -type f \
+        ! -name '*.pyc' \
+        ! -name '*.pyo' \
+        ! -path '*/__pycache__/*' \
+        | sed "s|$PARENT/||"
+
+} | tar -czf "$OUT" -C "$PARENT" --files-from=-
 
 SIZE=$(du -sh "$OUT" | cut -f1)
 echo "Created: $OUT  ($SIZE)"
 echo ""
 echo "Deploy:"
-echo "  tar -xzf $PROJECT.tgz && cd $PROJECT/src"
-echo "  pip install -r ../requirements.txt && pip install ../../option_lib"
+echo "  tar -xzf $PROJECT.tgz"
+echo "  pip install ./option_lib"
+echo "  pip install -r $PROJECT/requirements.txt"
 echo "  export OPTION_PWD=yourpassword"
-echo "  python main_web.py"
+echo "  cd $PROJECT/src && python main_web.py"
