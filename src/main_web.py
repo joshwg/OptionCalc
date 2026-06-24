@@ -23,7 +23,7 @@ import config as _cfg
 # Auth setup — OPTION_PWD must be set before the server starts
 # ---------------------------------------------------------------------------
 
-_SESSION_TIMEOUT_MINUTES = 120
+_SESSION_TIMEOUT_MINUTES = 240
 
 
 def _require_password() -> str:

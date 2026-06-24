@@ -42,12 +42,12 @@ def _auth_client():
 
 
 def _expired_client():
-    """Client whose session last_activity is 3 hours in the past."""
+    """Client whose session last_activity is 5 hours in the past (timeout is 4 hours)."""
     c = app.test_client()
-    three_hours_ago = (datetime.now() - timedelta(hours=3)).isoformat()
+    five_hours_ago = (datetime.now() - timedelta(hours=5)).isoformat()
     with c.session_transaction() as sess:
         sess['authenticated'] = True
-        sess['last_activity'] = three_hours_ago
+        sess['last_activity'] = five_hours_ago
     return c
 
 
