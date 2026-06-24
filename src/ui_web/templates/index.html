@@ -32,7 +32,7 @@
       </div>
 
       <!-- Row 2: Stock price + company name + earnings -->
-      <div class="d-flex align-items-center gap-3 mb-1 flex-wrap">
+      <div class="d-flex align-items-center gap-3 row-gap-0 mb-1 flex-wrap">
         <div class="d-flex align-items-center gap-1">
           <label class="form-label form-label-sm mb-0 text-nowrap" for="fPrice">
             Price ($)
@@ -42,7 +42,8 @@
                  title="Current stock price. Auto-filled when a ticker is loaded; can be overridden manually to model hypothetical scenarios.">
         </div>
         <div id="lblCompany" class="fw-semibold small text-truncate">&nbsp;</div>
-        <div class="d-flex align-items-center gap-2 ms-auto text-nowrap">
+        <div class="w-100 d-sm-none"></div>
+        <div class="d-flex align-items-center gap-2 ms-sm-auto mt-1 mt-sm-0 text-nowrap">
           <div class="form-check mb-0">
             <input class="form-check-input" type="checkbox" id="chkExtHours" disabled
                    title="Use pre- or post-market price instead of the regular-session close">
