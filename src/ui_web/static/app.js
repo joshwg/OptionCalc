@@ -5,12 +5,15 @@
 // ============================================================
 
 const state = {
-    ticker:      '',
-    S:           null,     // current stock price
-    divYield:    0,        // dividend yield as decimal
-    expirations: [],       // all available expirations
-    chains:      {},       // cached option chains: { exp: { calls, puts, T } }
-    quickIVs:    [null, null, null],
+    ticker:           '',
+    S:                null,   // effective stock price (regular or extended hours)
+    regularPrice:     null,   // last regular-session price
+    extHoursPrice:    null,   // pre- or post-market price (null if unavailable)
+    extHoursLabel:    '',     // 'pre-market' | 'post-market' | ''
+    divYield:         0,      // dividend yield as decimal
+    expirations:      [],     // all available expirations
+    chains:           {},     // cached option chains: { exp: { calls, puts, T } }
+    quickIVs:         [null, null, null],
 };
 
 // ============================================================
@@ -32,6 +35,7 @@ function setupListeners() {
     $('btnCalculate').addEventListener('click', calculateFull);
     $('btnSaveConfig').addEventListener('click', saveConfig);
 
+    $('chkExtHours').addEventListener('change', onExtHoursChange);
     $('fPrice').addEventListener('input', debounceRecalc);
     $('fExpiration').addEventListener('change', onExpirationChange);
     $('fStrike').addEventListener('change', onStrikeChange);
@@ -173,18 +177,41 @@ async function loadStockData() {
         if (!resp.ok) { setStatus(`Error: ${data.error || 'Failed to load'}`); return; }
     } catch (e) { setStatus(`Network error: ${e.message}`); return; }
 
-    state.ticker   = ticker;
-    state.S        = data.current_price;
-    state.divYield = data.dividend_yield || 0;
-    state.chains   = {};  // clear cached chains for previous ticker
+    // Determine extended-hours price and label
+    const extPrice = data.post_market_price || data.pre_market_price || null;
+    const extLabel = data.post_market_price ? 'post-market'
+                   : data.pre_market_price  ? 'pre-market'
+                   : '';
 
-    $('fPrice').value   = data.current_price != null ? data.current_price.toFixed(2) : '';
+    state.ticker        = ticker;
+    state.regularPrice  = data.current_price;
+    state.extHoursPrice = extPrice;
+    state.extHoursLabel = extLabel;
+    state.divYield      = data.dividend_yield || 0;
+    state.chains        = {};  // clear cached chains for previous ticker
+
+    // Enable/disable checkbox; preserve user's preference if ext price is available
+    const chk = $('chkExtHours');
+    chk.disabled = !extPrice;
+    if (!extPrice) chk.checked = false;
+    chk.title = extPrice
+        ? `${extLabel} price: $${extPrice.toFixed(2)} — click to use instead of regular close`
+        : 'No extended-hours price available for this ticker';
+
+    // Fill price field: use extended hours if checkbox is already checked
+    const effectivePrice = (chk.checked && extPrice) ? extPrice : data.current_price;
+    state.S = effectivePrice;
+
+    $('fPrice').value    = effectivePrice != null ? effectivePrice.toFixed(2) : '';
     $('fDividend').value = ((data.dividend_yield || 0) * 100).toFixed(2);
     $('lblEarnings').textContent = data.earnings_date || 'N/A';
     $('lblCompany').textContent  = `${data.company_name || ''} (${ticker})`;
 
     appendResult(`Company:       ${data.company_name}\n`);
     appendResult(`Current Price: $${data.current_price?.toFixed(2)}\n`);
+    if (extPrice) {
+        appendResult(`${extLabel.charAt(0).toUpperCase() + extLabel.slice(1)} Price: $${extPrice.toFixed(2)}\n`);
+    }
     if (data.previous_close) appendResult(`Prev Close:    $${data.previous_close}\n`);
     if (data.volume)         appendResult(`Volume:        ${Number(data.volume).toLocaleString()}\n`);
     appendResult(`Div Yield:     ${((data.dividend_yield || 0) * 100).toFixed(2)}%\n`);
@@ -204,6 +231,27 @@ async function loadStockData() {
     setStatus(`Loaded ${data.company_name} (${ticker})${srcNote}`);
 
     await loadExpirations(ticker);
+}
+
+// ============================================================
+// Extended-hours toggle
+// ============================================================
+
+async function onExtHoursChange() {
+    const chk = $('chkExtHours');
+    const price = (chk.checked && state.extHoursPrice) ? state.extHoursPrice : state.regularPrice;
+    if (price == null) return;
+
+    $('fPrice').value = price.toFixed(2);
+    state.S = price;
+    state.chains = {};   // invalidate chain cache — ATM strike depends on price
+
+    const label = chk.checked && state.extHoursPrice
+        ? `Using ${state.extHoursLabel} price ($${state.extHoursPrice.toFixed(2)})`
+        : `Using regular-session price ($${price.toFixed(2)})`;
+    setStatus(label);
+
+    if (state.ticker) await loadExpirations(state.ticker);
 }
 
 // ============================================================

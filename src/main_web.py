@@ -23,7 +23,7 @@ import config as _cfg
 # Auth setup — OPTION_PWD must be set before the server starts
 # ---------------------------------------------------------------------------
 
-_SESSION_TIMEOUT_MINUTES = 240
+SESSION_TIMEOUT_MINUTES = 240
 
 
 def _require_password() -> str:
@@ -71,7 +71,7 @@ def _is_authenticated() -> bool:
     last_str = session.get("last_activity")
     if not last_str:
         return False
-    cutoff = datetime.now() - timedelta(minutes=_SESSION_TIMEOUT_MINUTES)
+    cutoff = datetime.now() - timedelta(minutes=SESSION_TIMEOUT_MINUTES)
     try:
         if datetime.fromisoformat(last_str) < cutoff:
             session.clear()
@@ -199,14 +199,16 @@ def api_stock(ticker: str):
             pass
 
     return jsonify({
-        "ticker":         ticker,
-        "company_name":   info.get("company_name"),
-        "current_price":  info.get("current_price"),
-        "previous_close": info.get("previous_close"),
-        "volume":         info.get("volume"),
-        "dividend_yield": info.get("dividend_yield") or 0,
-        "earnings_date":  earnings_date or "unavailable",
-        "data_source":    source,   # "massive" | "yahoo_fallback" | "yahoo"
+        "ticker":             ticker,
+        "company_name":       info.get("company_name"),
+        "current_price":      info.get("current_price"),
+        "previous_close":     info.get("previous_close"),
+        "volume":             info.get("volume"),
+        "dividend_yield":     info.get("dividend_yield") or 0,
+        "earnings_date":      earnings_date or "unavailable",
+        "pre_market_price":   info.get("pre_market_price"),   # None when unavailable
+        "post_market_price":  info.get("post_market_price"),  # None when unavailable
+        "data_source":        source,   # "massive" | "yahoo_fallback" | "yahoo"
     })
 
 
