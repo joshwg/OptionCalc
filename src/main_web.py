@@ -14,7 +14,8 @@ from datetime import datetime, timedelta
 from flask import (Flask, jsonify, redirect, render_template,
                    request, send_from_directory, session, url_for)
 
-import yahoo_data as yd
+from option_lib.data_provider import get_provider
+from option_lib.math_util import get_years_to_expiration
 import option_service as svc
 import config as _cfg
 
@@ -22,7 +23,7 @@ import config as _cfg
 # Auth setup — OPTION_PWD must be set before the server starts
 # ---------------------------------------------------------------------------
 
-_SESSION_TIMEOUT_MINUTES = 240
+_SESSION_TIMEOUT_MINUTES = 120
 
 
 def _require_password() -> str:
@@ -170,31 +171,49 @@ def api_save_config():
 
 @app.route("/api/search/<query>")
 def api_search(query: str):
-    results = yd.search_ticker(query.strip(), max_results=10)
+    results = get_provider().search_ticker(query.strip(), max_results=10)
     return jsonify(results or [])
 
 
 @app.route("/api/stock/<ticker>")
 def api_stock(ticker: str):
-    ticker = ticker.strip().upper()
-    info = yd.get_stock_info(ticker)
+    ticker   = ticker.strip().upper()
+    provider = get_provider()
+    info     = provider.get_stock_info(ticker)
     if not info.get("success"):
         return jsonify({"error": info.get("error", "Failed to load stock data")}), 400
+
+    # _source is set by massive_data: "massive" | "yahoo_fallback"
+    # It is absent when using the Yahoo provider directly.
+    source = info.get("_source", "yahoo")
+
+    # Suppress earnings dates that are already in the past — they are stale
+    # artefacts from the previous quarter and should not guide expiry selection.
+    raw_earnings = info.get("earnings_date")
+    earnings_date: str | None = None
+    if raw_earnings:
+        try:
+            if datetime.strptime(raw_earnings, "%Y-%m-%d").date() >= datetime.now().date():
+                earnings_date = raw_earnings
+        except (ValueError, TypeError):
+            pass
+
     return jsonify({
-        "ticker":        ticker,
-        "company_name":  info.get("company_name"),
-        "current_price": info.get("current_price"),
+        "ticker":         ticker,
+        "company_name":   info.get("company_name"),
+        "current_price":  info.get("current_price"),
         "previous_close": info.get("previous_close"),
-        "volume":        info.get("volume"),
+        "volume":         info.get("volume"),
         "dividend_yield": info.get("dividend_yield") or 0,
-        "earnings_date":  info.get("earnings_date") or "unavailable",
+        "earnings_date":  earnings_date or "unavailable",
+        "data_source":    source,   # "massive" | "yahoo_fallback" | "yahoo"
     })
 
 
 @app.route("/api/hist-vol/<ticker>")
 def api_hist_vol(ticker: str):
     ticker = ticker.strip().upper()
-    vol = yd.calculate_historical_volatility(ticker, period="1y")
+    vol    = get_provider().calculate_historical_volatility(ticker, period="1y")
     if vol is None:
         return jsonify({"error": "Failed to calculate historical volatility"}), 400
     return jsonify({"ticker": ticker, "hist_vol": vol})
@@ -206,9 +225,9 @@ def api_hist_vol(ticker: str):
 
 @app.route("/api/expirations/<ticker>")
 def api_expirations(ticker: str):
-    ticker = ticker.strip().upper()
+    ticker    = ticker.strip().upper()
     all_dates = request.args.get("all", "false").lower() == "true"
-    chain = svc.fetch_expirations(ticker, all_dates=all_dates)
+    chain     = svc.fetch_expirations(ticker, all_dates=all_dates)
     if not chain.get("success"):
         return jsonify({"error": chain.get("error", "Failed to get expirations")}), 400
     return jsonify({"expirations": chain.get("expirations", [])})
@@ -216,8 +235,9 @@ def api_expirations(ticker: str):
 
 @app.route("/api/options/<ticker>/<expiration>")
 def api_options(ticker: str, expiration: str):
-    ticker = ticker.strip().upper()
-    options = yd.get_options_for_expiration(ticker, expiration)
+    ticker   = ticker.strip().upper()
+    provider = get_provider()
+    options  = provider.get_options_for_expiration(ticker, expiration)
     if not options.get("success"):
         return jsonify({"error": options.get("error", "Failed to get options")}), 400
 
@@ -229,7 +249,7 @@ def api_options(ticker: str, expiration: str):
     return jsonify({
         "calls": [_slim(o) for o in options.get("calls", [])],
         "puts":  [_slim(o) for o in options.get("puts",  [])],
-        "T":     yd.get_years_to_expiration(expiration),
+        "T":     get_years_to_expiration(expiration),
     })
 
 
@@ -248,11 +268,16 @@ def api_atm_iv(ticker: str, expiration: str, opt_type: str):
     except (ValueError, TypeError):
         r = 0.045
 
+    provider = get_provider()
     if not S:
-        info = yd.get_stock_info(ticker)
+        info = provider.get_stock_info(ticker)
+        if not info.get("success"):
+            return jsonify({"error": info.get("error", "Failed to load stock price")}), 400
         S = info.get("current_price") or 0.0
+        if not S:
+            return jsonify({"error": f"Stock price unavailable for {ticker}"}), 400
 
-    iv = yd.get_atm_implied_volatility(ticker, expiration, S, opt_type, r=r)
+    iv = provider.get_atm_implied_volatility(ticker, expiration, S, opt_type, r=r)
     return jsonify({"atm_iv": iv})
 
 
@@ -294,6 +319,14 @@ def api_calculate():
     if not exp:
         return jsonify({"error": "expiration date is required"}), 400
 
+    # Reject expiration dates before today; same-day (T=0 / 0DTE) is still valid.
+    try:
+        exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+        if exp_date < datetime.now().date():
+            return jsonify({"error": f"expiration date {exp} is in the past"}), 400
+    except ValueError:
+        return jsonify({"error": "expiration must be in YYYY-MM-DD format"}), 400
+
     # T=0 is a valid 0DTE option: the pricer returns intrinsic value.
     result = svc.price_option(S, K, exp, sigma, r, q, opt_type)
     return jsonify(result)
@@ -314,7 +347,7 @@ def api_iv():
 
     expiration = d.get("expiration", "")
     if expiration:
-        T = yd.get_years_to_expiration(expiration)
+        T = get_years_to_expiration(expiration)
     else:
         try:
             T = float(d["T"])

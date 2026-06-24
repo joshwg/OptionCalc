@@ -218,7 +218,7 @@ class TestStockEndpoint(unittest.TestCase):
         app.config['TESTING'] = True
         self.client = _auth_client()
 
-    @patch('main_web.yd.get_stock_info')
+    @patch('option_lib.yahoo_data.get_stock_info')
     def test_valid_ticker_returns_200(self, mock_info):
         mock_info.return_value = {
             'success': True, 'ticker': 'AAPL',
@@ -232,13 +232,13 @@ class TestStockEndpoint(unittest.TestCase):
         self.assertEqual(data['ticker'], 'AAPL')
         self.assertIn('current_price', data)
 
-    @patch('main_web.yd.get_stock_info')
+    @patch('option_lib.yahoo_data.get_stock_info')
     def test_failed_lookup_returns_400(self, mock_info):
         mock_info.return_value = {'success': False, 'error': 'Not found'}
         resp = self.client.get('/api/stock/INVALIDXYZ')
         self.assertEqual(resp.status_code, 400)
 
-    @patch('main_web.yd.get_stock_info')
+    @patch('option_lib.yahoo_data.get_stock_info')
     def test_ticker_uppercased(self, mock_info):
         mock_info.return_value = {
             'success': True, 'ticker': 'AAPL',
@@ -296,7 +296,7 @@ class TestSearchEndpoint(unittest.TestCase):
         app.config['TESTING'] = True
         self.client = _auth_client()
 
-    @patch('main_web.yd.search_ticker')
+    @patch('option_lib.yahoo_data.search_ticker')
     def test_returns_list(self, mock_search):
         mock_search.return_value = [
             {'symbol': 'AAPL', 'name': 'Apple Inc.', 'exchange': 'NMS', 'type': 'EQUITY'}
@@ -306,7 +306,7 @@ class TestSearchEndpoint(unittest.TestCase):
         data = resp.get_json()
         self.assertIsInstance(data, list)
 
-    @patch('main_web.yd.search_ticker')
+    @patch('option_lib.yahoo_data.search_ticker')
     def test_empty_results_returns_empty_list(self, mock_search):
         mock_search.return_value = []
         resp = self.client.get('/api/search/xyzxyz')

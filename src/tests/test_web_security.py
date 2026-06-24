@@ -197,7 +197,7 @@ class TestInputSanitisation(unittest.TestCase):
         app.config['TESTING'] = True
         self.c = _auth_client()
 
-    @patch('main_web.yd.get_stock_info')
+    @patch('option_lib.yahoo_data.get_stock_info')
     def test_malicious_ticker_in_stock_endpoint(self, mock_info):
         mock_info.return_value = {'success': False, 'error': 'bad ticker'}
         for ticker in MALICIOUS_TICKERS:
@@ -209,7 +209,7 @@ class TestInputSanitisation(unittest.TestCase):
                 self.assertIn(resp.status_code, (400, 404),
                     msg=f"Unexpected status {resp.status_code} for ticker {repr(ticker)}")
 
-    @patch('main_web.yd.search_ticker')
+    @patch('option_lib.yahoo_data.search_ticker')
     def test_malicious_query_in_search_endpoint(self, mock_search):
         mock_search.return_value = []
         for query in MALICIOUS_TICKERS:
@@ -218,7 +218,7 @@ class TestInputSanitisation(unittest.TestCase):
                 self.assertIn(resp.status_code, (200, 400, 404),
                     msg=f"Unexpected status {resp.status_code} for query {repr(query)}")
 
-    @patch('main_web.yd.calculate_historical_volatility')
+    @patch('option_lib.yahoo_data.calculate_historical_volatility')
     def test_malicious_ticker_in_hist_vol(self, mock_vol):
         mock_vol.return_value = None
         for ticker in MALICIOUS_TICKERS:

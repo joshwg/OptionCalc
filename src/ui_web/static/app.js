@@ -190,7 +190,18 @@ async function loadStockData() {
     appendResult(`Div Yield:     ${((data.dividend_yield || 0) * 100).toFixed(2)}%\n`);
     appendResult(`Next Earnings: ${data.earnings_date || 'unavailable'}\n`);
 
-    setStatus(`Loaded ${data.company_name} (${ticker})`);
+    // Show which data source served the request so provider failures are visible
+    const src = data.data_source;
+    if (src === 'massive') {
+        appendResult(`Data source:   Massive.com\n`);
+    } else if (src === 'yahoo_fallback') {
+        appendResult(`Data source:   Yahoo Finance (Massive.com unavailable)\n`);
+    }
+
+    const srcNote = src === 'massive'        ? ' [Massive]'
+                  : src === 'yahoo_fallback' ? ' [Yahoo — Massive unavailable]'
+                  : '';
+    setStatus(`Loaded ${data.company_name} (${ticker})${srcNote}`);
 
     await loadExpirations(ticker);
 }

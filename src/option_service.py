@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import yahoo_data as yd
+from option_lib.data_provider import get_provider
+from option_lib.math_util import get_days_to_expiration, get_years_to_expiration
 import option_pricing as bs
 
 
@@ -24,10 +25,14 @@ def fetch_expirations(ticker: str, all_dates: bool = False) -> dict:
 
     When *all_dates* is ``True``, all available expirations are returned.
     Otherwise the result is limited to the next 6 months.
+
+    Automatically uses Massive.com when MASSIVE_API_KEY is set, otherwise
+    falls back to Yahoo Finance.
     """
+    provider = get_provider()
     if all_dates:
-        return yd.get_option_chain(ticker)
-    return yd.get_option_chain_next_months(ticker, months=6)
+        return provider.get_option_chain(ticker)
+    return provider.get_option_chain_next_months(ticker, months=6)
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +105,10 @@ def price_option(
 ) -> dict:
     """Calculate American option price, time values, and all Greeks.
 
+    Uses the American binomial model for price and delta/gamma/theta/vega
+    (finite-difference bumps on the same tree), and the European
+    Black-Scholes formula for rho (cheap and nearly identical in practice).
+
     Returns::
 
         {
@@ -109,12 +118,24 @@ def price_option(
             "greeks": {"delta", "gamma", "theta", "vega", "rho"},
         }
     """
-    T    = yd.get_years_to_expiration(expiration)
-    days = yd.get_days_to_expiration(expiration)
-    price  = bs.american_option_binomial(
-        S, K, T, r, sigma, q=q, option_type=opt_type, steps=steps
-    )
-    greeks = bs.calculate_greeks(S, K, T, r, sigma, opt_type)
+    T    = get_years_to_expiration(expiration)
+    days = get_days_to_expiration(expiration)
+
+    # american_option_greeks returns price + delta/gamma/theta/vega in one pass,
+    # but its T=0 early-return omits 'price', so we fall back to american_option_binomial.
+    g     = bs.american_option_greeks(S, K, T, r, sigma, q=q, option_type=opt_type, steps=steps)
+    price = g.get("price") or bs.american_option_binomial(S, K, T, r, sigma, q=q, option_type=opt_type, steps=steps)
+
+    # Rho from the European formula — cheap, and the difference vs American is negligible
+    rho = bs.calculate_greeks(S, K, T, r, sigma, opt_type)["rho"]
+
+    greeks = {
+        "delta": g["delta"],
+        "gamma": g["gamma"],
+        "theta": g["theta"],
+        "vega":  g["vega"],
+        "rho":   rho,
+    }
     return {"price": price, "T": T, "days": days, "greeks": greeks}
 
 

@@ -16,4 +16,6 @@ from option_lib.yahoo_data import (
     get_expiration_dates,
     fetch_option_theoretical_price,
     fetch_option_theta,
+    fetch_option_delta,
+    fetch_option_greeks,
 )
