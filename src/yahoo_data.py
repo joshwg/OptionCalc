@@ -3,6 +3,7 @@ from option_lib.yahoo_data import (
     normalize_dividend_yield,
     search_ticker,
     get_stock_info,
+    get_earnings_date,
     calculate_historical_volatility,
     get_option_chain,
     get_option_chain_next_months,

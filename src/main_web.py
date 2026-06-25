@@ -189,7 +189,14 @@ def api_stock(ticker: str):
 
     # Suppress earnings dates that are already in the past — they are stale
     # artefacts from the previous quarter and should not guide expiry selection.
+    # Massive provider returns earnings_date=None from get_stock_info(); fetch
+    # it separately via get_earnings_date() which uses a 24-hour cache.
     raw_earnings = info.get("earnings_date")
+    if not raw_earnings:
+        try:
+            raw_earnings = provider.get_earnings_date(ticker)
+        except (AttributeError, Exception):
+            pass
     earnings_date: str | None = None
     if raw_earnings:
         try:
