@@ -8,7 +8,8 @@ All tests are pure-unit (no network).
 
 import unittest
 import pytest
-import yahoo_data as yd
+from option_lib.yahoo_data import normalize_dividend_yield, normalize_implied_volatility
+from option_lib.math_util import get_days_to_expiration, get_years_to_expiration
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -24,7 +25,7 @@ class TestNormalizeDividendYield(unittest.TestCase):
     """
 
     def _n(self, val):
-        return yd.normalize_dividend_yield(val)
+        return normalize_dividend_yield(val)
 
     # ── None / zero ───────────────────────────────────────────────────────
 
@@ -107,7 +108,7 @@ class TestNormalizeImpliedVolatility(unittest.TestCase):
     """
 
     def _n(self, val):
-        return yd.normalize_implied_volatility(val)
+        return normalize_implied_volatility(val)
 
     # ── None / zero ───────────────────────────────────────────────────────
 
@@ -177,35 +178,35 @@ class TestDateUtilities(unittest.TestCase):
     # ── get_days_to_expiration ─────────────────────────────────────────────
 
     def test_future_date_returns_positive_days(self):
-        days = yd.get_days_to_expiration(self._future(30))
+        days = get_days_to_expiration(self._future(30))
         self.assertGreaterEqual(days, 29)
         self.assertLessEqual(days, 31)
 
     def test_past_date_returns_zero(self):
-        days = yd.get_days_to_expiration(self._past(5))
+        days = get_days_to_expiration(self._past(5))
         self.assertEqual(days, 0)
 
     def test_far_future_days(self):
-        days = yd.get_days_to_expiration(self._future(500))
+        days = get_days_to_expiration(self._future(500))
         self.assertAlmostEqual(days, 500, delta=2)
 
     # ── get_years_to_expiration ────────────────────────────────────────────
 
     def test_one_year_out(self):
-        years = yd.get_years_to_expiration(self._future(365))
+        years = get_years_to_expiration(self._future(365))
         self.assertAlmostEqual(years, 1.0, delta=0.01)
 
     def test_short_term(self):
-        years = yd.get_years_to_expiration(self._future(30))
+        years = get_years_to_expiration(self._future(30))
         self.assertAlmostEqual(years, 30 / 365, delta=0.005)
 
     def test_past_date_returns_zero_years(self):
-        years = yd.get_years_to_expiration(self._past(10))
+        years = get_years_to_expiration(self._past(10))
         self.assertLessEqual(years, 0)
 
     def test_long_dated_option(self):
         # CRDO-style: ~500 days out
-        years = yd.get_years_to_expiration(self._future(500))
+        years = get_years_to_expiration(self._future(500))
         self.assertAlmostEqual(years, 500 / 365, delta=0.01)
 
 

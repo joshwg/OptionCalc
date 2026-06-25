@@ -9,8 +9,9 @@ from datetime import datetime
 import threading
 import os
 
-import yahoo_data as yd
 import option_service as svc
+from option_lib.data_provider import get_provider
+from option_lib.math_util import get_years_to_expiration
 from config_manager import ConfigManager
 from calculator_operations import CalculatorOperations
 from utils import ThreadingHelper, FontManager, InputValidator, SuggestionWidget
@@ -521,7 +522,7 @@ class OptionCalculatorWindow(CalculatorOperations):
             return
         
         def fetch_suggestions():
-            return yd.search_ticker(query, max_results=10)
+            return get_provider().search_ticker(query, max_results=10)
         
         # Use ThreadingHelper for async operation - use root window for callbacks
         ThreadingHelper.run_async_with_ui_update(
@@ -667,7 +668,7 @@ class OptionCalculatorWindow(CalculatorOperations):
         
         def fetch_and_populate():
             # Get options for the selected expiration
-            options = yd.get_options_for_expiration(ticker, exp_date)
+            options = get_provider().get_options_for_expiration(ticker, exp_date)
             
             if options['success']:
                 opt_type = self.option_type.get()
@@ -675,7 +676,7 @@ class OptionCalculatorWindow(CalculatorOperations):
 
                 # Find best strike (at/above ATM) + its IV, and ±10 strike window
                 r_val = float(self.risk_free_rate.get())
-                T_exp = yd.get_years_to_expiration(exp_date)
+                T_exp = get_years_to_expiration(exp_date)
                 best_strike, best_iv, strikes = svc.find_atm_strike_with_iv(
                     chain_data, current_price, T_exp, r_val, opt_type
                 )

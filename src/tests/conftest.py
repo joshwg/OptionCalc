@@ -11,7 +11,7 @@ import sys
 from datetime import datetime
 
 # ── Path setup ─────────────────────────────────────────────────────────────
-# src/  — application modules (option_pricing, yahoo_data, …)
+# src/  — application modules (option_pricing, option_service, …)
 _SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 # lab/  — parent of OptionCalculator, needed so `import option_lib` works
 _LAB = os.path.abspath(os.path.join(_SRC, "..", ".."))

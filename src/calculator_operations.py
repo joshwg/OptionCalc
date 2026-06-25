@@ -7,9 +7,10 @@ import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
 
-import yahoo_data as yd
 import option_pricing as bs  # noqa: F401 (re-exported for callers that import via this module)
 import option_service as svc
+from option_lib.data_provider import get_provider
+from option_lib.math_util import get_days_to_expiration, get_years_to_expiration
 from utils import ThreadingHelper, InputValidator
 
 
@@ -35,7 +36,7 @@ class CalculatorOperations:
         self.results_text.insert(tk.END, f"Loading data for {ticker}...\n")
 
         def fetch_data():
-            info = yd.get_stock_info(ticker)
+            info = get_provider().get_stock_info(ticker)
 
             if info['success']:
                 current_price = info['current_price']
@@ -72,7 +73,7 @@ class CalculatorOperations:
                     self.results_text.insert(tk.END, f"First expiration: {first_exp}\n")
                     
                     # Get options for that expiration
-                    options = yd.get_options_for_expiration(ticker, first_exp)
+                    options = get_provider().get_options_for_expiration(ticker, first_exp)
                     if options['success']:
                         # Find strike closest to but above current price
                         opt_type = self.option_type.get()
@@ -80,7 +81,7 @@ class CalculatorOperations:
                         
                         # Find best strike (at/above ATM) + its IV, and ±10 strike window
                         r_val = float(self.risk_free_rate.get())
-                        T_first = yd.get_years_to_expiration(first_exp)
+                        T_first = get_years_to_expiration(first_exp)
                         best_strike, best_iv, all_strikes = svc.find_atm_strike_with_iv(
                             chain_data, current_price, T_first, r_val, opt_type
                         )
@@ -189,7 +190,7 @@ class CalculatorOperations:
                                     r_val = float(self.risk_free_rate.get())
                                 except (ValueError, AttributeError):
                                     r_val = 0.045
-                                fetched = yd.get_atm_implied_volatility(ticker, exp_date, current_price, opt_type, r=r_val)
+                                fetched = get_provider().get_atm_implied_volatility(ticker, exp_date, current_price, opt_type, r=r_val)
                                 if fetched and fetched > 0.05:
                                     iv = fetched
                             if iv is None:
@@ -226,7 +227,7 @@ class CalculatorOperations:
         self.results_text.insert(tk.END, "\nCalculating historical volatility...\n")
         
         def fetch_vol():
-            vol = yd.calculate_historical_volatility(ticker, period='1y')
+            vol = get_provider().calculate_historical_volatility(ticker, period='1y')
             
             if vol:
                 vol_pct = vol * 100
@@ -258,8 +259,8 @@ class CalculatorOperations:
             self.results_text.insert(tk.END, f"\nGetting implied volatility for {ticker} ${strike} {opt_type}...\n")
             
             def fetch_iv_strike():
-                iv = yd.get_implied_volatility_for_strike(ticker, exp_date, strike, opt_type)
-                
+                iv = get_provider().get_implied_volatility_for_strike(ticker, exp_date, strike, opt_type)
+
                 if iv:
                     iv_pct = iv * 100
                     self.volatility.set(f"{iv_pct:.2f}")
@@ -278,8 +279,8 @@ class CalculatorOperations:
             self.results_text.insert(tk.END, f"\nGetting ATM implied volatility for {ticker}...\n")
             
             def fetch_iv_atm():
-                iv = yd.get_atm_implied_volatility(ticker, exp_date, current_price, opt_type)
-                
+                iv = get_provider().get_atm_implied_volatility(ticker, exp_date, current_price, opt_type)
+
                 if iv:
                     avg_iv = iv * 100
                     self.volatility.set(f"{avg_iv:.2f}")
@@ -325,7 +326,7 @@ class CalculatorOperations:
             return
         
         def fetch_dates():
-            chain = yd.get_option_chain(ticker)
+            chain = get_provider().get_option_chain(ticker)
             
             if chain['success']:
                 dates_str = "\n".join(chain['expirations'])
@@ -358,7 +359,7 @@ class CalculatorOperations:
             
             def fetch_and_calculate():
                 # Get IV for this strike computed from bid/ask mid
-                iv = yd.get_implied_volatility_for_strike(
+                iv = get_provider().get_implied_volatility_for_strike(
                     ticker, exp_date, strike, opt_type,
                     S=current_price, r=float(self.risk_free_rate.get())
                 )
@@ -385,7 +386,7 @@ class CalculatorOperations:
                         # Display results
                         self.results_text.insert(tk.END, f"Selected Option: {ticker} ${K:.2f} {opt_type.upper()}\n")
                         self.results_text.insert(tk.END, f"Expiration: {exp_date}\n")
-                        self.results_text.insert(tk.END, f"Days to Expiration: {yd.get_days_to_expiration(exp_date)}\n\n")
+                        self.results_text.insert(tk.END, f"Days to Expiration: {get_days_to_expiration(exp_date)}\n\n")
                         self.results_text.insert(tk.END, f"Theoretical Price: ${price:.2f}\n\n")
                         self.results_text.insert(tk.END, "Greeks:\n")
                         self.results_text.insert(tk.END, f"  Delta: {greeks['delta']:.4f}\n")
@@ -466,7 +467,7 @@ class CalculatorOperations:
             r = float(self.risk_free_rate.get())
             opt_type = self.option_type.get()
             
-            T = yd.get_years_to_expiration(exp_date)
+            T = get_years_to_expiration(exp_date)
             if T <= 0:
                 messagebox.showwarning("Warning", "Option has expired or expiration date is invalid")
                 return
@@ -566,7 +567,7 @@ class CalculatorOperations:
                 
                 for i, exp_date in enumerate(dates, 1):
                     # Fetch expiration-specific IV
-                    exp_sigma = yd.get_atm_implied_volatility(ticker, exp_date, S, opt_type)
+                    exp_sigma = get_provider().get_atm_implied_volatility(ticker, exp_date, S, opt_type)
                     if exp_sigma is None:
                         exp_sigma = sigma
                         iv_source = "main field (fallback)"
