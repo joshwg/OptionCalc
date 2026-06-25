@@ -177,10 +177,18 @@ async function loadStockData() {
         if (!resp.ok) { setStatus(`Error: ${data.error || 'Failed to load'}`); return; }
     } catch (e) { setStatus(`Network error: ${e.message}`); return; }
 
-    // Determine extended-hours price and label
-    const extPrice = data.post_market_price || data.pre_market_price || null;
-    const extLabel = data.post_market_price ? 'post-market'
-                   : data.pre_market_price  ? 'pre-market'
+    // Determine extended-hours price and label.
+    // When both fields are non-null (e.g. early morning: yesterday's post-market
+    // close and today's pre-market price are both present), prefer whichever
+    // session is actually current: pre-market before noon ET, post-market after.
+    const etHour = parseInt(new Date().toLocaleString('en-US', {
+        timeZone: 'America/New_York', hour: 'numeric', hour12: false
+    }));
+    const extPrice = (etHour < 12 ? data.pre_market_price  || data.post_market_price
+                                  : data.post_market_price || data.pre_market_price) || null;
+    const extLabel = (etHour < 12 && data.pre_market_price) ? 'pre-market'
+                   : data.post_market_price                  ? 'post-market'
+                   : data.pre_market_price                   ? 'pre-market'
                    : '';
 
     state.ticker        = ticker;

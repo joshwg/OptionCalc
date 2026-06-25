@@ -124,7 +124,7 @@ def price_option(
     # american_option_greeks returns price + delta/gamma/theta/vega in one pass,
     # but its T=0 early-return omits 'price', so we fall back to american_option_binomial.
     g     = bs.american_option_greeks(S, K, T, r, sigma, q=q, option_type=opt_type, steps=steps)
-    price = g.get("price") or bs.american_option_binomial(S, K, T, r, sigma, q=q, option_type=opt_type, steps=steps)
+    price = g.get("price") if g.get("price") is not None else bs.american_option_binomial(S, K, T, r, sigma, q=q, option_type=opt_type, steps=steps)
 
     # Rho from the European formula — cheap, and the difference vs American is negligible
     rho = bs.calculate_greeks(S, K, T, r, sigma, opt_type)["rho"]
@@ -201,4 +201,4 @@ def iv_for_strike(
         iv  = bs.implied_volatility(mid, S, K, T, r, option_type=opt_type)
         if iv and iv > 0:
             return iv
-    return opt.get("implied_volatility") or None
+    return opt.get("implied_volatility")

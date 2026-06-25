@@ -1,5 +1,5 @@
 """
-config.py – Load and save OptionCalculator settings from ../data/optioncalculator.cfg
+config.py – Load and save OptionCalculator settings from <project_root>/data/optioncalculator.cfg
 
 Format: one NAME=VALUE pair per line; blank lines and lines starting with
 # are ignored.  Unknown keys are silently ignored on load.
@@ -8,7 +8,7 @@ Format: one NAME=VALUE pair per line; blank lines and lines starting with
 from pathlib import Path
 from typing import Any
 
-DATA_DIR    = Path("../data")
+DATA_DIR    = Path(__file__).parent.parent / "data"
 CONFIG_FILE = DATA_DIR / "optioncalculator.cfg"
 
 DEFAULTS: dict[str, Any] = {

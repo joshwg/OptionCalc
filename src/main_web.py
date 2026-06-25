@@ -195,8 +195,12 @@ def api_stock(ticker: str):
     if not raw_earnings:
         try:
             raw_earnings = provider.get_earnings_date(ticker)
-        except (AttributeError, Exception):
+        except AttributeError:
+            # Provider doesn't implement get_earnings_date — earnings date stays None.
             pass
+        except Exception:
+            # Network / data error: earnings date is supplemental, so log and continue.
+            app.logger.warning("get_earnings_date(%s) failed", ticker, exc_info=True)
     earnings_date: str | None = None
     if raw_earnings:
         try:

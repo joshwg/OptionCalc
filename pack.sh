@@ -56,11 +56,11 @@ tar -czf "$OUT" \
     --exclude='*/build' \
     --exclude='.pytest_cache' \
     --exclude='*/.pytest_cache' \
-    --exclude="$PROJECT/src/main.py" \
-    --exclude="$PROJECT/src/calculator_window.py" \
-    --exclude="$PROJECT/src/calculator_operations.py" \
-    --exclude="$PROJECT/src/config_manager.py" \
-    --exclude="$PROJECT/src/utils" \
+    --exclude="./$PROJECT/src/main.py" \
+    --exclude="./$PROJECT/src/calculator_window.py" \
+    --exclude="./$PROJECT/src/calculator_operations.py" \
+    --exclude="./$PROJECT/src/config_manager.py" \
+    --exclude="./$PROJECT/src/utils" \
     -C "$PARENT" \
     "$PROJECT" \
     option_lib

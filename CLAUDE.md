@@ -83,7 +83,7 @@ PYTHONPATH=src:/mnt/c/Users/josh/Docs/lab venv/bin/python -m pytest src/tests/te
 # Skip slow binomial-convergence tests
 PYTHONPATH=src:/mnt/c/Users/josh/Docs/lab venv/bin/python -m pytest -m "not slow"
 
-# Skip live-network tests (none by default; add @pytest.mark.network to new ones)
+# Skip live-network tests (test_cvna_load.py and test_fair_value_load.py are marked @pytest.mark.network)
 PYTHONPATH=src:/mnt/c/Users/josh/Docs/lab venv/bin/python -m pytest -m "not network"
 ```
 
@@ -98,6 +98,8 @@ Test files and what they cover:
 | `test_input_validator.py` | ticker, float (with bounds), date, required-fields, dividend-yield helpers |
 | `test_web_api.py` | All Flask endpoints with mocked external calls; calculate/IV endpoint math |
 | `test_web_security.py` | Auth bypass, session expiry, login brute-force, XSS/path-traversal inputs, boundary values, payload hardening |
+| `test_cvna_load.py` | Live end-to-end load for CVNA: stock info → expirations → option chain (NaN/JSON safety) → IV → ATM IV (`@pytest.mark.network`) |
+| `test_fair_value_load.py` | Parametrised fair value regression for multiple tickers: expiry resolution, chain validity, strike lookup, ATM IV, full calculate round-trip (`@pytest.mark.network`) |
 
 ## Key Notes
 
