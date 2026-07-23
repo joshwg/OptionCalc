@@ -181,9 +181,9 @@ async function loadStockData() {
     // When both fields are non-null (e.g. early morning: yesterday's post-market
     // close and today's pre-market price are both present), prefer whichever
     // session is actually current: pre-market before noon ET, post-market after.
-    const etHour = parseInt(new Date().toLocaleString('en-US', {
-        timeZone: 'America/New_York', hour: 'numeric', hour12: false
-    }));
+    const etHour = new Date(
+        new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })
+    ).getHours();
     const extPrice = (etHour < 12 ? data.pre_market_price  || data.post_market_price
                                   : data.post_market_price || data.pre_market_price) || null;
     const extLabel = (etHour < 12 && data.pre_market_price) ? 'pre-market'
@@ -252,14 +252,20 @@ async function onExtHoursChange() {
 
     $('fPrice').value = price.toFixed(2);
     state.S = price;
-    state.chains = {};   // invalidate chain cache — ATM strike depends on price
+    // Don't clear state.chains: the option chain data (strikes, bids, asks, stored IVs)
+    // is independent of S. Clearing it would force a fresh Yahoo API call in pre-market
+    // where bid/ask/IV are all zero, clobbering the valid IVs cached from the regular
+    // session. onExpirationChange re-selects the ATM strike using the new $('fPrice').value.
 
     const label = chk.checked && state.extHoursPrice
         ? `Using ${state.extHoursLabel} price ($${state.extHoursPrice.toFixed(2)})`
         : `Using regular-session price ($${price.toFixed(2)})`;
     setStatus(label);
 
-    if (state.ticker) await loadExpirations(state.ticker);
+    if (state.ticker) {
+        await onExpirationChange();   // re-select ATM strike / IV with the new price
+        loadQuickView();              // refresh quick-view ATM IVs
+    }
 }
 
 // ============================================================
@@ -344,18 +350,21 @@ async function onExpirationChange() {
     // usable bid/ask (e.g. deep OTM strikes with zero markets on low-price stocks).
     const opt = chainData.find(o => o.strike === selectedStrike);
     let iv = opt ? await computeIV(opt, selectedStrike, S, chain.T, r, optType) : null;
-    if (!iv || iv <= 0) {
+    // Treat sub-5% IVs as invalid: pre-market chains often carry stale near-zero stored IVs
+    // that pass the `> 0` guard but display as "0.00", silently zeroing out sigma.
+    // This threshold matches the one already used in fetchQuickRowIV.
+    if (!iv || iv < 0.05) {
         try {
             const resp = await apiFetch(
                 `/api/atm-iv/${state.ticker}/${exp}/${optType}?S=${S}&r=${r}`
             );
             if (resp.ok) {
                 const d = await resp.json();
-                if (d.atm_iv && d.atm_iv > 0) iv = d.atm_iv;
+                if (d.atm_iv && d.atm_iv >= 0.05) iv = d.atm_iv;
             }
         } catch (_) { /* leave iv null */ }
     }
-    if (iv && iv > 0) {
+    if (iv && iv >= 0.05) {
         $('fVolatility').value = (iv * 100).toFixed(2);
     }
 
@@ -378,7 +387,7 @@ async function onStrikeChange() {
         const opt = chainData?.find(o => o.strike === strike);
         if (opt) {
             const iv = await computeIV(opt, strike, S, chain.T, r, optType);
-            if (iv && iv > 0) {
+            if (iv && iv >= 0.05) {
                 $('fVolatility').value = (iv * 100).toFixed(2);
             }
         }

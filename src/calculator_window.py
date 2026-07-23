@@ -667,41 +667,43 @@ class OptionCalculatorWindow(CalculatorOperations):
         self.results_text.insert(tk.END, f"Loading option data for {exp_date}...\n")
         
         def fetch_and_populate():
-            # Get options for the selected expiration
-            options = get_provider().get_options_for_expiration(ticker, exp_date)
-            
-            if options['success']:
-                opt_type = self.option_type.get()
-                chain_data = options['calls'] if opt_type == 'call' else options['puts']
+            try:
+                options = get_provider().get_options_for_expiration(ticker, exp_date)
 
-                # Find best strike (at/above ATM) + its IV, and ±10 strike window
-                r_val = float(self.risk_free_rate.get())
-                T_exp = get_years_to_expiration(exp_date)
-                best_strike, best_iv, strikes = svc.find_atm_strike_with_iv(
-                    chain_data, current_price, T_exp, r_val, opt_type
-                )
-                nearby_strikes, _ = svc.atm_strikes_window(strikes, current_price)
+                if options['success']:
+                    opt_type = self.option_type.get()
+                    chain_data = options['calls'] if opt_type == 'call' else options['puts']
 
-                if best_strike:
-                    # Update strike price - this will trigger on_strike_price_change
-                    self.strike_price.set(str(best_strike))
-                    self.strike_combo['values'] = nearby_strikes
+                    # Find best strike (at/above ATM) + its IV, and ±10 strike window
+                    r_val = float(self.risk_free_rate.get())
+                    T_exp = get_years_to_expiration(exp_date)
+                    best_strike, best_iv, strikes = svc.find_atm_strike_with_iv(
+                        chain_data, current_price, T_exp, r_val, opt_type
+                    )
+                    nearby_strikes, _ = svc.atm_strikes_window(strikes, current_price)
 
-                    # Set IV
-                    if best_iv and best_iv > 0:
-                        iv_pct = best_iv * 100
-                        self.volatility.set(f"{iv_pct:.2f}")
-                        self.results_text.insert(tk.END, f"Strike: ${best_strike:.2f}\n")
-                        self.results_text.insert(tk.END, f"Implied Volatility: {iv_pct:.2f}%\n")
+                    if best_strike:
+                        # Update strike price - this will trigger on_strike_price_change
+                        self.strike_price.set(str(best_strike))
+                        self.strike_combo['values'] = nearby_strikes
+
+                        # Set IV
+                        if best_iv and best_iv > 0:
+                            iv_pct = best_iv * 100
+                            self.volatility.set(f"{iv_pct:.2f}")
+                            self.results_text.insert(tk.END, f"Strike: ${best_strike:.2f}\n")
+                            self.results_text.insert(tk.END, f"Implied Volatility: {iv_pct:.2f}%\n")
+                        else:
+                            self.results_text.insert(tk.END, f"Strike: ${best_strike:.2f}\n")
+                            self.results_text.insert(tk.END, "No implied volatility available\n")
+
+                        # Reload quick view with new dates
+                        self.load_expiration_dates_silent()
                     else:
-                        self.results_text.insert(tk.END, f"Strike: ${best_strike:.2f}\n")
-                        self.results_text.insert(tk.END, "No implied volatility available\n")
-                    
-                    # Reload quick view with new dates
-                    self.load_expiration_dates_silent()
+                        self.results_text.insert(tk.END, "No strikes available for this expiration\n")
                 else:
-                    self.results_text.insert(tk.END, "No strikes available for this expiration\n")
-            else:
-                self.results_text.insert(tk.END, f"Error loading options: {options.get('error', 'Unknown error')}\n")
-        
+                    self.results_text.insert(tk.END, f"Error loading options: {options.get('error', 'Unknown error')}\n")
+            except Exception as e:
+                self.set_status(f"Error: {e}")
+
         ThreadingHelper.run_async_simple(fetch_and_populate, self.root_window)
