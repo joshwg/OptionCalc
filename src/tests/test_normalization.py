@@ -210,5 +210,120 @@ class TestDateUtilities(unittest.TestCase):
         self.assertAlmostEqual(years, 500 / 365, delta=0.01)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Time-to-expiry near expiration
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestNearExpiryTime(unittest.TestCase):
+    """T must count the hours left to the 16:00 ET close, not whole days.
+
+    Flooring to calendar days understates T by 20%+ on the day before expiry
+    and collapses it to exactly zero on expiry day, which prices every OTM
+    contract at intrinsic (0.00) with all greeks zeroed while it is still
+    trading.
+    """
+
+    def _et_today(self):
+        from datetime import datetime
+        from option_lib.math_util import MARKET_TZ
+        return datetime.now(MARKET_TZ).date()
+
+    def _past(self, days):
+        from datetime import timedelta
+        return (self._et_today() - timedelta(days=days)).strftime('%Y-%m-%d')
+
+    def _future(self, days):
+        from datetime import timedelta
+        return (self._et_today() + timedelta(days=days)).strftime('%Y-%m-%d')
+
+    def test_expiry_day_has_time_left_before_close(self):
+        from datetime import datetime
+        from option_lib.math_util import MARKET_TZ, get_hours_to_expiration
+        now = datetime.now(MARKET_TZ)
+        today = self._et_today().strftime('%Y-%m-%d')
+        hours = get_hours_to_expiration(today)
+        if now.hour < 16:
+            self.assertGreater(hours, 0, "0DTE before the close must retain time value")
+            self.assertGreater(get_years_to_expiration(today), 0)
+        else:
+            self.assertEqual(hours, 0.0)
+
+    def test_tomorrow_exceeds_one_day_when_before_close(self):
+        from datetime import datetime, timedelta
+        from option_lib.math_util import MARKET_TZ, get_hours_to_expiration
+        now = datetime.now(MARKET_TZ)
+        tomorrow = (self._et_today() + timedelta(days=1)).strftime('%Y-%m-%d')
+        hours = get_hours_to_expiration(tomorrow)
+        if now.hour < 16:
+            # Intraday today → more than 24h remain to tomorrow's 16:00 close
+            self.assertGreater(hours, 24.0)
+        self.assertLessEqual(hours, 40.0)
+
+    def test_past_expiry_is_zero_not_negative(self):
+        from option_lib.math_util import get_hours_to_expiration
+        self.assertEqual(get_hours_to_expiration(self._past(3)), 0.0)
+        self.assertEqual(get_years_to_expiration(self._past(3)), 0.0)
+
+    def test_days_field_remains_whole_days(self):
+        # get_days_to_expiration stays integral — it is a display value
+        days = get_days_to_expiration(self._future(7))
+        self.assertIsInstance(days, int)
+
+    def test_malformed_date_is_handled(self):
+        from option_lib.math_util import get_hours_to_expiration
+        self.assertEqual(get_hours_to_expiration('not-a-date'), 0.0)
+        self.assertEqual(get_years_to_expiration('not-a-date'), 0.0)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Weekend price carry
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestWeekendCarry(unittest.TestCase):
+    """Friday's after-hours print stays the freshest quote until Monday 04:00 ET.
+
+    Falling back to current_price over the weekend would price two and a half
+    days off Friday's 16:00 close and discard every after-hours move.
+    """
+
+    INFO = {'current_price': 100.0, 'post_market_price': 104.0, 'pre_market_price': 97.0}
+
+    def _at(self, y, m, d, hh, mm=0):
+        from datetime import datetime
+        from option_lib.math_util import MARKET_TZ
+        return datetime(y, m, d, hh, mm, tzinfo=MARKET_TZ)
+
+    def _S(self, when):
+        from option_lib.math_util import extended_underlying
+        return extended_underlying(self.INFO, when)
+
+    # 2026-08-07 is a Friday
+    def test_friday_evening_uses_post(self):
+        self.assertEqual(self._S(self._at(2026, 8, 7, 18)), 104.0)
+
+    def test_saturday_small_hours_uses_post(self):
+        self.assertEqual(self._S(self._at(2026, 8, 8, 2)), 104.0)
+
+    def test_saturday_daytime_carries_friday_post(self):
+        self.assertEqual(self._S(self._at(2026, 8, 8, 11)), 104.0)
+
+    def test_sunday_carries_friday_post(self):
+        self.assertEqual(self._S(self._at(2026, 8, 9, 12)), 104.0)
+
+    def test_monday_before_premarket_carries_friday_post(self):
+        self.assertEqual(self._S(self._at(2026, 8, 10, 2)), 104.0)
+
+    def test_monday_premarket_switches_to_pre(self):
+        self.assertEqual(self._S(self._at(2026, 8, 10, 5)), 97.0)
+
+    def test_monday_regular_hours_uses_current(self):
+        self.assertEqual(self._S(self._at(2026, 8, 10, 10)), 100.0)
+
+    def test_weekend_falls_back_when_post_missing(self):
+        from option_lib.math_util import extended_underlying
+        info = {'current_price': 100.0, 'post_market_price': None}
+        self.assertEqual(extended_underlying(info, self._at(2026, 8, 9, 12)), 100.0)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -231,5 +231,48 @@ class TestIvForStrike(unittest.TestCase):
         self.assertIsNone(iv)
 
 
+class TestIVForStrikeSource(unittest.TestCase):
+    """The provenance tag that lets the UI flag an unsolved IV.
+
+    Provider IV fields disagree with the same row's own quotes on short-dated
+    contracts, so 'chain' results must be distinguishable from solved ones
+    rather than presented as if they came from the market.
+    """
+
+    def test_solved_from_mid_is_tagged_mid(self):
+        price = bs.black_scholes_call(100, 100, 1.0, 0.05, 0.22)
+        opt = {'bid': price, 'ask': price, 'implied_volatility': 0.99}
+        iv, source = svc.iv_for_strike_with_source(opt, 100, 100, 1.0, 0.05, 'call')
+        self.assertEqual(source, 'mid')
+        self.assertAlmostEqual(iv, 0.22, delta=0.005)
+
+    def test_stored_fallback_is_tagged_chain(self):
+        opt = {'bid': 0, 'ask': 0, 'implied_volatility': 0.28}
+        iv, source = svc.iv_for_strike_with_source(opt, 100, 100, 1.0, 0.05, 'call')
+        self.assertEqual(source, 'chain')
+        self.assertAlmostEqual(iv, 0.28, places=4)
+
+    def test_short_dated_otm_is_solved_not_stored(self):
+        """The regression: a 1-DTE OTM put must not fall through to the provider IV."""
+        S, K, T, r = 309.75, 295.0, 29 / 24 / 365, 0.05
+        mid = bs.black_scholes_put(S, K, T, r, 1.03)
+        opt = {'bid': mid, 'ask': mid, 'implied_volatility': 0.86}   # Yahoo's low figure
+        iv, source = svc.iv_for_strike_with_source(opt, K, S, T, r, 'put')
+        self.assertEqual(source, 'mid')
+        self.assertAlmostEqual(iv, 1.03, places=3)
+
+    def test_nothing_usable_returns_none_pair(self):
+        self.assertEqual(
+            svc.iv_for_strike_with_source(None, 100, 100, 1.0, 0.05, 'call'), (None, None))
+        self.assertEqual(
+            svc.iv_for_strike_with_source({'bid': 0, 'ask': 0}, 100, 100, 1.0, 0.05, 'call'),
+            (None, None))
+
+    def test_iv_for_strike_still_returns_scalar(self):
+        opt = {'bid': 0, 'ask': 0, 'implied_volatility': 0.28}
+        self.assertAlmostEqual(svc.iv_for_strike(opt, 100, 100, 1.0, 0.05, 'call'), 0.28,
+                               places=4)
+
+
 if __name__ == '__main__':
     unittest.main()

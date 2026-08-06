@@ -40,7 +40,7 @@ function setupListeners() {
     $('fExpiration').addEventListener('change', onExpirationChange);
     $('fStrike').addEventListener('change', onStrikeChange);
     $('fStrikeCustom').addEventListener('input', debounceRecalc);
-    $('fVolatility').addEventListener('input', debounceRecalc);
+    $('fVolatility').addEventListener('input', () => { setIVSource('user'); debounceRecalc(); });
     $('fRiskFree').addEventListener('input', debounceRecalc);
     $('fDividend').addEventListener('input', debounceRecalc);
 
@@ -349,7 +349,9 @@ async function onExpirationChange() {
     // Compute IV for selected strike; fall back to ATM IV if the strike has no
     // usable bid/ask (e.g. deep OTM strikes with zero markets on low-price stocks).
     const opt = chainData.find(o => o.strike === selectedStrike);
-    let iv = opt ? await computeIV(opt, selectedStrike, S, chain.T, r, optType) : null;
+    const resolved = opt ? await computeIV(opt, selectedStrike, S, chain.T, r, optType)
+                         : { iv: null, source: null };
+    let iv = resolved.iv, ivSource = resolved.source;
     // Treat sub-5% IVs as invalid: pre-market chains often carry stale near-zero stored IVs
     // that pass the `> 0` guard but display as "0.00", silently zeroing out sigma.
     // This threshold matches the one already used in fetchQuickRowIV.
@@ -360,12 +362,15 @@ async function onExpirationChange() {
             );
             if (resp.ok) {
                 const d = await resp.json();
-                if (d.atm_iv && d.atm_iv >= 0.05) iv = d.atm_iv;
+                if (d.atm_iv && d.atm_iv >= 0.05) { iv = d.atm_iv; ivSource = 'atm'; }
             }
         } catch (_) { /* leave iv null */ }
     }
     if (iv && iv >= 0.05) {
         $('fVolatility').value = (iv * 100).toFixed(2);
+        setIVSource(ivSource);
+    } else {
+        setIVSource(null);
     }
 
     setStatus(`${strikes.length} strikes for ${exp}`);
@@ -386,9 +391,10 @@ async function onStrikeChange() {
         const chainData = optType === 'call' ? chain.calls : chain.puts;
         const opt = chainData?.find(o => o.strike === strike);
         if (opt) {
-            const iv = await computeIV(opt, strike, S, chain.T, r, optType);
+            const { iv, source } = await computeIV(opt, strike, S, chain.T, r, optType);
             if (iv && iv >= 0.05) {
                 $('fVolatility').value = (iv * 100).toFixed(2);
+                setIVSource(source);
             }
         }
     }
@@ -407,6 +413,7 @@ async function onOptionTypeChange() {
     const exp = $('fExpiration').value;
     if (exp && state.ticker) {
         $('fVolatility').value = '';   // stale IV from the previous type; force re-resolve
+        setIVSource(null);
         await onExpirationChange();    // repopulate strikes + best IV for new type
     } else {
         debounceRecalc();
@@ -426,7 +433,8 @@ async function loadChain(ticker, exp) {
     } catch (_) { return null; }
 }
 
-// Compute IV: bid/ask mid via API first, fall back to stored IV
+// Compute IV: bid/ask mid via API first, fall back to stored IV.
+// Returns { iv, source } — see setIVSource() for what the sources mean.
 async function computeIV(opt, K, S, T, r, optType) {
     if (opt.bid > 0 && opt.ask > 0 && T > 0) {
         const mid = (opt.bid + opt.ask) / 2;
@@ -438,11 +446,39 @@ async function computeIV(opt, K, S, T, r, optType) {
             });
             if (resp.ok) {
                 const d = await resp.json();
-                if (d.iv && d.iv > 0) return d.iv;
+                if (d.iv && d.iv > 0) return { iv: d.iv, source: 'mid' };
             }
         } catch (_) { /* fall through */ }
     }
-    return opt.implied_volatility || null;
+    return opt.implied_volatility
+        ? { iv: opt.implied_volatility, source: 'chain' }
+        : { iv: null, source: null };
+}
+
+// Where the volatility currently in the form came from.  Only 'mid' is solved
+// from this strike's own market; the others are stand-ins that can be well off
+// on short-dated contracts, so they get flagged rather than shown as fact.
+const IV_SOURCE_NOTE = {
+    mid:   null,
+    chain: ['provider IV',
+            "Not solved from this strike's bid/ask — this is the data provider's own "
+            + 'stored figure, which is often materially low on short-dated options.'],
+    atm:   ['ATM IV',
+            'This strike had no usable two-sided market, so the at-the-money IV for the '
+            + 'expiry is shown. It ignores skew, which is steep near expiry.'],
+    hist:  ['historical',
+            'Realised volatility from past returns, not implied. The market prices options '
+            + 'off forward-looking IV, which is usually higher.'],
+    user:  null,
+};
+
+function setIVSource(source) {
+    const el = $('ivSource');
+    if (!el) return;
+    const note = IV_SOURCE_NOTE[source];
+    el.textContent = note ? note[0] : '';
+    el.title       = note ? note[1] : '';
+    el.classList.toggle('d-none', !note);
 }
 
 // ============================================================
@@ -679,6 +715,7 @@ async function calcHistVol() {
 
     const volPct = data.hist_vol * 100;
     $('fVolatility').value = volPct.toFixed(2);
+    setIVSource('hist');
     setStatus(`Historical Volatility (1y): ${volPct.toFixed(2)}%`);
     appendResult(`Historical Volatility (1 year): ${volPct.toFixed(2)}%\n`);
     debounceRecalc();

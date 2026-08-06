@@ -302,6 +302,67 @@ class TestImpliedVolatility(unittest.TestCase):
             self.assertLess(iv, 0.05)
 
 
+class TestImpliedVolatilityShortDated(unittest.TestCase):
+    """Short-dated OTM contracts — where the old Newton-Raphson solver failed.
+
+    Vega collapses towards zero here, so a Newton step from a fixed 0.3 seed
+    overshoots into sigma <= 0 and the solve returns None.  Every call site
+    treats None as "use the provider's stored IV instead", which is silently
+    far too low near expiry, so these are the cases that must converge.
+    """
+
+    def _roundtrip(self, sigma, S, K, T, opt_type='put', r=0.05):
+        pricer = bs.black_scholes_call if opt_type == 'call' else bs.black_scholes_put
+        return bs.implied_volatility(pricer(S, K, T, r, sigma), S, K, T, r, opt_type)
+
+    def test_one_day_otm_put_converges(self):
+        # LRCX 2026-08-07 295P: S=309.75, ~29h to expiry, market IV ~1.03
+        iv = self._roundtrip(1.03, S=309.75, K=295.0, T=29 / 24 / 365)
+        self.assertIsNotNone(iv, "1-DTE OTM put must resolve, not fall back to stored IV")
+        self.assertAlmostEqual(iv, 1.03, places=3)
+
+    def test_one_day_otm_call_converges(self):
+        iv = self._roundtrip(0.95, S=309.75, K=325.0, T=29 / 24 / 365, opt_type='call')
+        self.assertIsNotNone(iv)
+        self.assertAlmostEqual(iv, 0.95, places=3)
+
+    def test_hours_to_expiry_converges(self):
+        # Expiry-day morning: ~6h left
+        iv = self._roundtrip(1.20, S=100.0, K=97.0, T=6 / 24 / 365)
+        self.assertIsNotNone(iv)
+        self.assertAlmostEqual(iv, 1.20, places=3)
+
+    def test_far_otm_short_dated_converges(self):
+        # 8% OTM with a day to run — the region where vega is smallest
+        iv = self._roundtrip(0.85, S=100.0, K=92.0, T=1 / 365)
+        self.assertIsNotNone(iv)
+        self.assertAlmostEqual(iv, 0.85, places=3)
+
+    def test_low_vol_short_dated_converges(self):
+        # Solution well below the old 0.3 seed rather than above it
+        iv = self._roundtrip(0.12, S=100.0, K=100.0, T=2 / 365)
+        self.assertIsNotNone(iv)
+        self.assertAlmostEqual(iv, 0.12, places=3)
+
+    def test_price_above_bracket_returns_none(self):
+        # Unattainable even at sigma=600% → no root, caller must fall back
+        iv = bs.implied_volatility(50.0, 100.0, 95.0, 1 / 365, 0.05, 'put')
+        self.assertIsNone(iv)
+
+    def test_price_below_intrinsic_returns_none(self):
+        # Crossed/stale quote under the zero-vol floor → no root
+        iv = bs.implied_volatility(0.01, 100.0, 130.0, 1 / 365, 0.05, 'put')
+        self.assertIsNone(iv)
+
+    def test_solver_is_monotonic_across_the_smile(self):
+        """A richer quote must never solve to a lower IV."""
+        S, T, r = 309.75, 29 / 24 / 365, 0.05
+        prices = [1.0, 1.5, 2.0, 2.5, 3.0]
+        ivs = [bs.implied_volatility(p, S, 295.0, T, r, 'put') for p in prices]
+        self.assertTrue(all(v is not None for v in ivs), ivs)
+        self.assertEqual(ivs, sorted(ivs))
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # American binomial tree
 # ═══════════════════════════════════════════════════════════════════════════

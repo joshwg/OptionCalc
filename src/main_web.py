@@ -372,8 +372,8 @@ def api_iv():
 
     # Delegate to option_service using a minimal option-row shim
     opt_row = {"bid": market_price, "ask": market_price, "implied_volatility": None}
-    iv = svc.iv_for_strike(opt_row, K, S, T, r, opt_type)
-    return jsonify({"iv": iv})
+    iv, source = svc.iv_for_strike_with_source(opt_row, K, S, T, r, opt_type)
+    return jsonify({"iv": iv, "iv_source": source})
 
 
 if __name__ == "__main__":

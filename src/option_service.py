@@ -181,6 +181,39 @@ def find_post_earnings_expiration(
 # Helpers
 # ---------------------------------------------------------------------------
 
+def iv_for_strike_with_source(
+    opt: dict | None,
+    K: float,
+    S: float,
+    T: float,
+    r: float,
+    opt_type: str,
+) -> tuple[float | None, str | None]:
+    """Compute IV from a single option row, reporting where the number came from.
+
+    Returns *(iv, source)* where source is:
+
+    ``"mid"``    solved from the row's own bid/ask mid — trustworthy;
+    ``"chain"``  the provider's stored ``implied_volatility`` field, used only
+                 when the row has no two-sided market or the solve failed;
+    ``None``     nothing usable.
+
+    The distinction matters: provider IV fields are frequently inconsistent
+    with the same row's quotes on short-dated contracts (Yahoo has reported
+    85% on a 1-DTE put whose own bid/ask imply 117%), so a ``"chain"`` result
+    should be surfaced to the user rather than presented as a solved IV.
+    """
+    if opt is None:
+        return None, None
+    if opt.get("bid", 0) > 0 and opt.get("ask", 0) > 0 and T > 0:
+        mid = (opt["bid"] + opt["ask"]) / 2
+        iv  = bs.implied_volatility(mid, S, K, T, r, option_type=opt_type)
+        if iv and iv > 0:
+            return iv, "mid"
+    stored = opt.get("implied_volatility")
+    return (stored, "chain") if stored else (None, None)
+
+
 def iv_for_strike(
     opt: dict | None,
     K: float,
@@ -192,13 +225,7 @@ def iv_for_strike(
     """Compute IV from a single option row.
 
     Tries bid/ask mid first; falls back to the row's stored
-    ``implied_volatility`` value.
+    ``implied_volatility`` value.  Use :func:`iv_for_strike_with_source` when
+    the caller needs to know which of the two it got.
     """
-    if opt is None:
-        return None
-    if opt.get("bid", 0) > 0 and opt.get("ask", 0) > 0 and T > 0:
-        mid = (opt["bid"] + opt["ask"]) / 2
-        iv  = bs.implied_volatility(mid, S, K, T, r, option_type=opt_type)
-        if iv and iv > 0:
-            return iv
-    return opt.get("implied_volatility")
+    return iv_for_strike_with_source(opt, K, S, T, r, opt_type)[0]
