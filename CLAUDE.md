@@ -33,6 +33,7 @@ src/
     static/style.css        # Custom styles
   tests/
     conftest.py             # pytest fixtures and sys.path setup
+    provider_mock.py        # DataProvider mocking + MASSIVE_API_KEY env helpers
     test_option_pricing.py  # BS, binomial, greeks, IV, monotonicity
     test_option_service.py  # service layer: price_option, strike selection
     test_normalization.py   # dividend/IV normalisation + date utilities
@@ -103,6 +104,7 @@ Test files and what they cover:
 
 ## Key Notes
 
+- Market data is reached through `option_lib.data_provider.get_provider()`, which picks Massive.com when `MASSIVE_API_KEY` is set and Yahoo Finance otherwise. Tests must mock the seam (`main_web.get_provider`, via `tests/provider_mock.py`), never a concrete backend module like `option_lib.yahoo_data` — a backend-level patch is bypassed whenever the other provider is selected, so the test's result depends on the developer's environment.
 - Dividend yield and implied volatility from Yahoo Finance may arrive as percentages (>0.5 or >2) — `normalize_dividend_yield()` and `normalize_implied_volatility()` handle this.
 - Black-Scholes is for European options; Binomial Tree (`american_option_binomial`) handles early exercise for American options.
 - `Ctrl+1` through `Ctrl+9` opens multiple calculator windows in the desktop app.

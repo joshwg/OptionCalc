@@ -10,14 +10,14 @@ Tests cover:
   6. Session integrity — expired session is rejected
 """
 
-import json
 import os
 import time
 import unittest
 from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock
 
 from main_web import app
+
+from .provider_mock import MASSIVE_KEY_STATES, massive_api_key, mock_provider
 
 # Must match whatever OPTION_PWD was set to when main_web was imported.
 # conftest.py sets it via os.environ.setdefault before any import happens.
@@ -197,35 +197,37 @@ class TestInputSanitisation(unittest.TestCase):
         app.config['TESTING'] = True
         self.c = _auth_client()
 
-    @patch('option_lib.yahoo_data.get_stock_info')
-    def test_malicious_ticker_in_stock_endpoint(self, mock_info):
-        mock_info.return_value = {'success': False, 'error': 'bad ticker'}
-        for ticker in MALICIOUS_TICKERS:
-            with self.subTest(ticker=repr(ticker)):
-                resp = self.c.get(f'/api/stock/{ticker}')
-                # Path-traversal inputs may produce a 404 (routing mismatch);
-                # XSS/injection inputs may produce a 400 or 404.
-                # None of these should silently succeed (200) or crash (500).
-                self.assertIn(resp.status_code, (400, 404),
-                    msg=f"Unexpected status {resp.status_code} for ticker {repr(ticker)}")
+    def test_malicious_ticker_in_stock_endpoint(self):
+        failure = {'success': False, 'error': 'bad ticker'}
+        for massive in MASSIVE_KEY_STATES:
+            for ticker in MALICIOUS_TICKERS:
+                with self.subTest(massive_api_key=massive, ticker=repr(ticker)), \
+                     massive_api_key(massive), mock_provider(get_stock_info=failure):
+                    resp = self.c.get(f'/api/stock/{ticker}')
+                    # Path-traversal inputs may produce a 404 (routing mismatch);
+                    # XSS/injection inputs may produce a 400 or 404.
+                    # None of these should silently succeed (200) or crash (500).
+                    self.assertIn(resp.status_code, (400, 404),
+                        msg=f"Unexpected status {resp.status_code} for ticker {repr(ticker)}")
 
-    @patch('option_lib.yahoo_data.search_ticker')
-    def test_malicious_query_in_search_endpoint(self, mock_search):
-        mock_search.return_value = []
-        for query in MALICIOUS_TICKERS:
-            with self.subTest(query=repr(query)):
-                resp = self.c.get(f'/api/search/{query}')
-                self.assertIn(resp.status_code, (200, 400, 404),
-                    msg=f"Unexpected status {resp.status_code} for query {repr(query)}")
+    def test_malicious_query_in_search_endpoint(self):
+        for massive in MASSIVE_KEY_STATES:
+            for query in MALICIOUS_TICKERS:
+                with self.subTest(massive_api_key=massive, query=repr(query)), \
+                     massive_api_key(massive), mock_provider(search_ticker=[]):
+                    resp = self.c.get(f'/api/search/{query}')
+                    self.assertIn(resp.status_code, (200, 400, 404),
+                        msg=f"Unexpected status {resp.status_code} for query {repr(query)}")
 
-    @patch('option_lib.yahoo_data.calculate_historical_volatility')
-    def test_malicious_ticker_in_hist_vol(self, mock_vol):
-        mock_vol.return_value = None
-        for ticker in MALICIOUS_TICKERS:
-            with self.subTest(ticker=repr(ticker)):
-                resp = self.c.get(f'/api/hist-vol/{ticker}')
-                self.assertIn(resp.status_code, (400, 404),
-                    msg=f"Unexpected status {resp.status_code} for ticker {repr(ticker)}")
+    def test_malicious_ticker_in_hist_vol(self):
+        for massive in MASSIVE_KEY_STATES:
+            for ticker in MALICIOUS_TICKERS:
+                with self.subTest(massive_api_key=massive, ticker=repr(ticker)), \
+                     massive_api_key(massive), \
+                     mock_provider(calculate_historical_volatility=None):
+                    resp = self.c.get(f'/api/hist-vol/{ticker}')
+                    self.assertIn(resp.status_code, (400, 404),
+                        msg=f"Unexpected status {resp.status_code} for ticker {repr(ticker)}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

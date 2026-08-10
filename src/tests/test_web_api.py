@@ -2,18 +2,23 @@
 Tests for the Flask web API endpoints (main_web.py).
 
 Uses Flask's built-in test client with a pre-authenticated session.
-External network calls (yahoo_data, option_service) are mocked so these
-tests run offline and deterministically.
+External network calls (the market data provider, option_service) are mocked
+so these tests run offline and deterministically.
+
+Provider-backed endpoints are mocked at ``main_web.get_provider`` and exercised
+with MASSIVE_API_KEY both set and unset, so they cover the Massive.com and
+Yahoo Finance configurations alike — see tests/provider_mock.py.
 """
 
-import json
 import unittest
 from datetime import datetime
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 # conftest.py already sets OPTION_PWD and adds src/ to sys.path
-from main_web import app
+from main_web import app, get_provider
+
+from .provider_mock import MASSIVE_KEY_STATES, massive_api_key, mock_provider
 
 
 def _auth_client():
@@ -218,37 +223,44 @@ class TestStockEndpoint(unittest.TestCase):
         app.config['TESTING'] = True
         self.client = _auth_client()
 
-    @patch('option_lib.yahoo_data.get_stock_info')
-    def test_valid_ticker_returns_200(self, mock_info):
-        mock_info.return_value = {
+    def test_valid_ticker_returns_200(self):
+        info = {
             'success': True, 'ticker': 'AAPL',
             'company_name': 'Apple Inc.', 'current_price': 213.50,
             'previous_close': 211.00, 'volume': 55_000_000,
             'dividend_yield': 0.0044, 'earnings_date': '2025-07-31',
         }
-        resp = self.client.get('/api/stock/AAPL')
-        self.assertEqual(resp.status_code, 200)
-        data = resp.get_json()
-        self.assertEqual(data['ticker'], 'AAPL')
-        self.assertIn('current_price', data)
+        for massive in MASSIVE_KEY_STATES:
+            with self.subTest(massive_api_key=massive), \
+                 massive_api_key(massive), mock_provider(get_stock_info=info):
+                resp = self.client.get('/api/stock/AAPL')
+                self.assertEqual(resp.status_code, 200)
+                data = resp.get_json()
+                self.assertEqual(data['ticker'], 'AAPL')
+                self.assertIn('current_price', data)
 
-    @patch('option_lib.yahoo_data.get_stock_info')
-    def test_failed_lookup_returns_400(self, mock_info):
-        mock_info.return_value = {'success': False, 'error': 'Not found'}
-        resp = self.client.get('/api/stock/INVALIDXYZ')
-        self.assertEqual(resp.status_code, 400)
+    def test_failed_lookup_returns_400(self):
+        failure = {'success': False, 'error': 'Not found'}
+        for massive in MASSIVE_KEY_STATES:
+            with self.subTest(massive_api_key=massive), \
+                 massive_api_key(massive), mock_provider(get_stock_info=failure):
+                resp = self.client.get('/api/stock/INVALIDXYZ')
+                self.assertEqual(resp.status_code, 400)
 
-    @patch('option_lib.yahoo_data.get_stock_info')
-    def test_ticker_uppercased(self, mock_info):
-        mock_info.return_value = {
+    def test_ticker_uppercased(self):
+        info = {
             'success': True, 'ticker': 'AAPL',
             'company_name': 'Apple', 'current_price': 200.0,
             'previous_close': 199.0, 'volume': 1000,
             'dividend_yield': 0.0, 'earnings_date': None,
         }
-        self.client.get('/api/stock/aapl')   # lowercase input
-        # Should have been called with uppercase
-        mock_info.assert_called_once_with('AAPL')
+        for massive in MASSIVE_KEY_STATES:
+            with self.subTest(massive_api_key=massive), \
+                 massive_api_key(massive), \
+                 mock_provider(get_stock_info=info) as provider:
+                self.client.get('/api/stock/aapl')   # lowercase input
+                # Should have been called with uppercase
+                provider.get_stock_info.assert_called_once_with('AAPL')
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -296,22 +308,49 @@ class TestSearchEndpoint(unittest.TestCase):
         app.config['TESTING'] = True
         self.client = _auth_client()
 
-    @patch('option_lib.yahoo_data.search_ticker')
-    def test_returns_list(self, mock_search):
-        mock_search.return_value = [
+    def test_returns_list(self):
+        hits = [
             {'symbol': 'AAPL', 'name': 'Apple Inc.', 'exchange': 'NMS', 'type': 'EQUITY'}
         ]
-        resp = self.client.get('/api/search/apple')
-        self.assertEqual(resp.status_code, 200)
-        data = resp.get_json()
-        self.assertIsInstance(data, list)
+        for massive in MASSIVE_KEY_STATES:
+            with self.subTest(massive_api_key=massive), \
+                 massive_api_key(massive), mock_provider(search_ticker=hits):
+                resp = self.client.get('/api/search/apple')
+                self.assertEqual(resp.status_code, 200)
+                data = resp.get_json()
+                self.assertIsInstance(data, list)
 
-    @patch('option_lib.yahoo_data.search_ticker')
-    def test_empty_results_returns_empty_list(self, mock_search):
-        mock_search.return_value = []
-        resp = self.client.get('/api/search/xyzxyz')
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get_json(), [])
+    def test_empty_results_returns_empty_list(self):
+        for massive in MASSIVE_KEY_STATES:
+            with self.subTest(massive_api_key=massive), \
+                 massive_api_key(massive), mock_provider(search_ticker=[]):
+                resp = self.client.get('/api/search/xyzxyz')
+                self.assertEqual(resp.status_code, 200)
+                self.assertEqual(resp.get_json(), [])
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Provider selection — which backend the factory hands main_web
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestProviderSelection(unittest.TestCase):
+    """MASSIVE_API_KEY chooses the pricing backend at call time.
+
+    This is the behaviour that made backend-module patching environment
+    dependent, so it is asserted directly rather than assumed.
+    """
+
+    def test_key_set_selects_massive(self):
+        from option_lib.data_provider import MassiveDataProvider
+        with massive_api_key(True):
+            provider = get_provider()
+        self.assertIsInstance(provider.pricing_provider, MassiveDataProvider)
+
+    def test_key_unset_selects_yahoo(self):
+        from option_lib.data_provider import YahooDataProvider
+        with massive_api_key(False):
+            provider = get_provider()
+        self.assertIsInstance(provider.pricing_provider, YahooDataProvider)
 
 
 if __name__ == '__main__':
