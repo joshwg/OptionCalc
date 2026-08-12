@@ -77,12 +77,12 @@
             <div class="col-7">
               <div class="form-check form-check-inline">
                 <input class="form-check-input" type="radio" name="optType"
-                       id="optCall" value="call" checked>
+                       id="optCall" value="call">
                 <label class="form-check-label" for="optCall">Call</label>
               </div>
               <div class="form-check form-check-inline">
                 <input class="form-check-input" type="radio" name="optType"
-                       id="optPut" value="put">
+                       id="optPut" value="put" checked>
                 <label class="form-check-label" for="optPut">Put</label>
               </div>
             </div>
@@ -187,8 +187,9 @@
     <!-- Quick View -->
     <div class="col-12 col-md-6">
       <div class="card h-100">
-        <div class="card-header py-1 small fw-semibold">
-          Quick View — Next 3 Expirations
+        <div class="card-header py-1 small fw-semibold"
+             title="Nearest expiration, plus the listed expirations closest to one and two weeks after it — mid-week weeklies are skipped so all three rows share a weekday.">
+          Quick View — Nearest, +1 Week, +2 Weeks
         </div>
         <div class="card-body py-2">
           <table class="table table-sm table-bordered mb-0" id="quickViewTable">
@@ -206,16 +207,16 @@
                 <td><input type="number" class="form-control oc-qstrike"
                            id="qstrike0" step="0.5" placeholder="--"
                            title="Override the strike price for this expiration, then press Enter to recalculate"></td>
-                <td id="qiv0" title="At-the-money implied volatility fetched from the option chain">--</td>
-                <td id="qprice0" title="Theoretical fair price using the ATM implied volatility for this expiration">--</td>
+                <td id="qiv0">--</td>
+                <td id="qprice0" title="Theoretical fair price for this strike, using the implied volatility solved from its own bid/ask midpoint.">--</td>
               </tr>
               <tr id="qrow1">
                 <td id="qdate1">--</td>
                 <td><input type="number" class="form-control oc-qstrike"
                            id="qstrike1" step="0.5" placeholder="--"
                            title="Override the strike price for this expiration, then press Enter to recalculate"></td>
-                <td id="qiv1" title="At-the-money implied volatility fetched from the option chain">--</td>
-                <td id="qprice1" title="Theoretical fair price using the ATM implied volatility for this expiration">--</td>
+                <td id="qiv1">--</td>
+                <td id="qprice1" title="Theoretical fair price for this strike, using the implied volatility solved from its own bid/ask midpoint.">--</td>
               </tr>
               <tr id="qrow2">
                 <td id="qdate2">--</td>
@@ -223,7 +224,7 @@
                            id="qstrike2" step="0.5" placeholder="--"
                            title="Override the strike price for this expiration, then press Enter to recalculate"></td>
                 <td id="qiv2">--</td>
-                <td id="qprice2">--</td>
+                <td id="qprice2" title="Theoretical fair price for this strike, using the implied volatility solved from its own bid/ask midpoint.">--</td>
               </tr>
             </tbody>
           </table>

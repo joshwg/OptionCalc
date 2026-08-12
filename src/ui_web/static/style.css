@@ -105,3 +105,15 @@
     border-radius: 3px;
     cursor: help;
 }
+
+/* Same provenance warning for a quick-view row: the IV shown was not solved
+   from that row's own strike, so its fair price ignores skew.  Marked in place
+   rather than with a badge — the cells are too narrow to carry one. */
+
+.oc-iv-fallback {
+    color: #664d03;
+    background: #fff3cd;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+    cursor: help;
+}

@@ -70,7 +70,7 @@ class OptionCalculatorWindow(CalculatorOperations):
         self.expiration_date = tk.StringVar(master=self.window, value="")
         self.volatility = tk.StringVar(master=self.window, value="")
         self.risk_free_rate = tk.StringVar(master=self.window, value=str(self.config.get('risk_free_rate', 0.045)))
-        self.option_type = tk.StringVar(master=self.window, value="call")
+        self.option_type = tk.StringVar(master=self.window, value="put")
         self.calculated_price = tk.StringVar(master=self.window, value="--")
         self.dividend_yield = 0.0  # Store dividend yield as decimal (e.g., 0.02 for 2%)
         self.dividend_rate = tk.StringVar(master=self.window, value="0.00")  # Display variable for dividend rate %

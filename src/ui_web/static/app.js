@@ -352,21 +352,18 @@ async function onExpirationChange() {
     const resolved = opt ? await computeIV(opt, selectedStrike, S, chain.T, r, optType)
                          : { iv: null, source: null };
     let iv = resolved.iv, ivSource = resolved.source;
-    // Treat sub-5% IVs as invalid: pre-market chains often carry stale near-zero stored IVs
-    // that pass the `> 0` guard but display as "0.00", silently zeroing out sigma.
-    // This threshold matches the one already used in fetchQuickRowIV.
-    if (!iv || iv < 0.05) {
+    if (!iv || iv < MIN_USABLE_IV) {
         try {
             const resp = await apiFetch(
                 `/api/atm-iv/${state.ticker}/${exp}/${optType}?S=${S}&r=${r}`
             );
             if (resp.ok) {
                 const d = await resp.json();
-                if (d.atm_iv && d.atm_iv >= 0.05) { iv = d.atm_iv; ivSource = 'atm'; }
+                if (d.atm_iv && d.atm_iv >= MIN_USABLE_IV) { iv = d.atm_iv; ivSource = 'atm'; }
             }
         } catch (_) { /* leave iv null */ }
     }
-    if (iv && iv >= 0.05) {
+    if (iv && iv >= MIN_USABLE_IV) {
         $('fVolatility').value = (iv * 100).toFixed(2);
         setIVSource(ivSource);
     } else {
@@ -392,18 +389,19 @@ async function onStrikeChange() {
         const opt = chainData?.find(o => o.strike === strike);
         if (opt) {
             const { iv, source } = await computeIV(opt, strike, S, chain.T, r, optType);
-            if (iv && iv >= 0.05) {
+            if (iv && iv >= MIN_USABLE_IV) {
                 $('fVolatility').value = (iv * 100).toFixed(2);
                 setIVSource(source);
             }
         }
     }
 
-    // Sync quick-view strikes to match
+    // Sync quick-view strikes to match.  Each row's IV is solved from its own
+    // strike, so a new strike means a full re-resolve, not just a re-price.
+    const quickExps = quickViewExpirations();
     for (let i = 0; i < 3; i++) {
         $(`qstrike${i}`).value = strike.toFixed(2);
-        const first3 = state.expirations.slice(0, 3);
-        if (i < first3.length) calcQuickRowPrice(i, first3[i]);
+        if (i < quickExps.length) recalcQuickRow(i);   // non-blocking
     }
 
     debounceRecalc();
@@ -455,6 +453,11 @@ async function computeIV(opt, K, S, T, r, optType) {
         : { iv: null, source: null };
 }
 
+// Treat sub-5% IVs as invalid: pre-market chains often carry stale near-zero
+// stored IVs that pass a `> 0` guard but display as "0.00", silently zeroing
+// out sigma.  Applied everywhere an IV is accepted, main panel and quick view.
+const MIN_USABLE_IV = 0.05;
+
 // Where the volatility currently in the form came from.  Only 'mid' is solved
 // from this strike's own market; the others are stand-ins that can be well off
 // on short-dated contracts, so they get flagged rather than shown as fact.
@@ -485,22 +488,66 @@ function setIVSource(source) {
 // Quick View
 // ============================================================
 
+// Rows are the nearest expiration plus the ones a week and a fortnight after
+// it, not the literal next three.  Tickers carrying Mon/Wed/Fri weeklies would
+// otherwise fill the table with mid-week expiries a day or two apart; stepping
+// in 7-day strides keeps every row on the same weekday as the first.
+const QUICK_VIEW_OFFSET_DAYS = [0, 7, 14];
+const MS_PER_DAY = 86400000;
+
+/** Parse a 'YYYY-MM-DD' expiration to a UTC timestamp (no local-timezone drift). */
+function expTimestamp(exp) {
+    const [y, m, d] = exp.split('-').map(Number);
+    return Date.UTC(y, m - 1, d);
+}
+
+/** Expirations for the quick view: the nearest one, then +7d and +14d from it.
+ *
+ * Each offset resolves to the closest listed expiration not already taken, so a
+ * holiday-shifted week still fills the row, and chains with no weeklies degrade
+ * to the next expirations available.  May return fewer than 3 entries.
+ */
+function quickViewExpirations() {
+    const exps = state.expirations;
+    if (exps.length === 0) return [];
+
+    const anchor = expTimestamp(exps[0]);
+    const chosen = [];
+
+    for (const offset of QUICK_VIEW_OFFSET_DAYS) {
+        const target = anchor + offset * MS_PER_DAY;
+        let best = null, bestGap = Infinity;
+        for (const exp of exps) {
+            if (chosen.includes(exp)) continue;
+            const gap = Math.abs(expTimestamp(exp) - target);
+            if (gap < bestGap) { bestGap = gap; best = exp; }
+        }
+        if (best) chosen.push(best);
+    }
+    return chosen;
+}
+
+// Guards against stale async writes: a row's strike can change while its chain
+// fetch and IV solve are still in flight, and responses need not come back in
+// the order they were issued.  Each pass takes a ticket; only the newest paints.
+const _quickRowSeq = [0, 0, 0];
+
 async function loadQuickView() {
     if (!state.ticker || !state.S || state.expirations.length === 0) return;
 
     const optType    = getOptType();
-    const S          = state.S;
+    const S          = parseFloat($('fPrice').value) || state.S;
     const r          = parseFloat($('fRiskFree').value);
     const mainStrike = getStrike() || null;
-    const first3     = state.expirations.slice(0, 3);
+    const quickExps  = quickViewExpirations();
 
     state.quickIVs = [null, null, null];
 
     for (let i = 0; i < 3; i++) {
         const row = $(`qrow${i}`);
-        if (i < first3.length) {
+        if (i < quickExps.length) {
             row.style.display = '';
-            const exp = first3[i];
+            const exp = quickExps[i];
             $(`qdate${i}`).textContent  = fmtExpDate(exp, optType);
             $(`qstrike${i}`).value      = mainStrike ? mainStrike.toFixed(2) : '';
             $(`qiv${i}`).textContent    = '…';
@@ -512,35 +559,75 @@ async function loadQuickView() {
     }
 }
 
-async function fetchQuickRowIV(rowIdx, exp, optType, S, r) {
+/** Resolve the IV for one quick-view row from that row's own strike.
+ *
+ * Mirrors what onExpirationChange/onStrikeChange do for the main panel — solve
+ * from the strike's bid/ask midpoint, fall back to the chain's stored IV, and
+ * only then to the expiry's ATM IV.  Pricing a non-ATM strike with ATM vol
+ * ignores skew, which is what used to make a quick row disagree with Option
+ * Parameters on an identical contract.
+ *
+ * Returns { iv, source } with source 'mid' | 'chain' | 'atm' | null.
+ */
+async function resolveQuickRowIV(rowIdx, exp, optType, S, r) {
+    const K = parseFloat($(`qstrike${rowIdx}`).value);
+
+    if (K > 0 && S > 0) {
+        const chain     = await loadChain(state.ticker, exp);
+        const chainData = optType === 'call' ? chain?.calls : chain?.puts;
+        const opt       = chainData?.find(o => o.strike === K);
+        if (opt) {
+            const { iv, source } = await computeIV(opt, K, S, chain.T, r, optType);
+            if (iv && iv >= MIN_USABLE_IV) return { iv, source };
+        }
+    }
+
+    // No usable two-sided market at this strike (deep OTM, or a custom strike
+    // that isn't listed) — fall back to the expiry's ATM IV, flagged as such.
     try {
         const params = new URLSearchParams({ S, r });
         const resp = await apiFetch(`/api/atm-iv/${state.ticker}/${exp}/${optType}?${params}`);
-        if (!resp.ok) throw new Error('bad response');
-        const data  = await resp.json();
-        const iv    = data.atm_iv;
-
-        if (iv && iv > 0) {
-            state.quickIVs[rowIdx]          = iv;
-            $(`qiv${rowIdx}`).textContent   = `${(iv * 100).toFixed(1)}%`;
-            // If this row matches the currently selected expiry and fVolatility
-            // is still empty (per-strike IV lookup failed), back-fill it now so
-            // the fair-price display uses the same IV as the quick view.
-            if (rowIdx === 0 && exp === $('fExpiration').value
-                    && !parseFloat($('fVolatility').value)) {
-                $('fVolatility').value = (iv * 100).toFixed(2);
-                debounceRecalc();
-            }
-        } else {
-            $(`qiv${rowIdx}`).textContent   = '--';
+        if (resp.ok) {
+            const d = await resp.json();
+            if (d.atm_iv && d.atm_iv >= MIN_USABLE_IV) return { iv: d.atm_iv, source: 'atm' };
         }
-    } catch (_) {
-        $(`qiv${rowIdx}`).textContent = '--';
-    }
-    await calcQuickRowPrice(rowIdx, exp);
+    } catch (_) { /* fall through */ }
+
+    return { iv: null, source: null };
 }
 
-async function calcQuickRowPrice(rowIdx, exp) {
+async function fetchQuickRowIV(rowIdx, exp, optType, S, r) {
+    const seq = ++_quickRowSeq[rowIdx];
+    const { iv, source } = await resolveQuickRowIV(rowIdx, exp, optType, S, r);
+    if (seq !== _quickRowSeq[rowIdx]) return;   // a newer pass superseded this one
+
+    state.quickIVs[rowIdx] = iv;
+
+    const cell = $(`qiv${rowIdx}`);
+    const note = IV_SOURCE_NOTE[source];
+    cell.textContent = iv ? `${(iv * 100).toFixed(1)}%` : '--';
+    // 'mid' is the only source solved from this strike's own market; the rest
+    // are stand-ins, so mark them the same way the main panel's badge does.
+    cell.title = note ? `${note[0]} — ${note[1]}`
+                      : "Solved from this strike's bid/ask midpoint.";
+    cell.classList.toggle('oc-iv-fallback', Boolean(iv && note));
+
+    // When this row is showing exactly what Option Parameters is showing and the
+    // main volatility field is still empty, seed it so the two panels agree.
+    if (iv && exp === $('fExpiration').value
+            && parseFloat($(`qstrike${rowIdx}`).value) === getStrike()
+            && !parseFloat($('fVolatility').value)) {
+        $('fVolatility').value = (iv * 100).toFixed(2);
+        setIVSource(source);
+        debounceRecalc();
+    }
+
+    await calcQuickRowPrice(rowIdx, exp, seq);
+}
+
+async function calcQuickRowPrice(rowIdx, exp, seq) {
+    if (seq === undefined) seq = ++_quickRowSeq[rowIdx];
+
     const K       = parseFloat($(`qstrike${rowIdx}`).value);
     const S       = parseFloat($('fPrice').value);
     const sigma   = state.quickIVs[rowIdx] ?? (parseFloat($('fVolatility').value) / 100);
@@ -548,7 +635,10 @@ async function calcQuickRowPrice(rowIdx, exp) {
     const q       = parseFloat($('fDividend').value) / 100;
     const optType = getOptType();
 
-    if (!K || !S || !sigma || isNaN(r) || !exp) {
+    // Same guard as doRecalc, including isNaN(q): a blank dividend field would
+    // otherwise serialise as null and come back a 400, so the two panels must
+    // agree on what counts as unpriceable.
+    if (!K || !S || !sigma || isNaN(r) || isNaN(q) || !exp) {
         $(`qprice${rowIdx}`).textContent = '--'; return;
     }
 
@@ -558,6 +648,7 @@ async function calcQuickRowPrice(rowIdx, exp) {
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ S, K, expiration: exp, sigma, r, q, option_type: optType }),
         });
+        if (seq !== _quickRowSeq[rowIdx]) return;
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
             setStatus(`Error: ${err.error || 'calculation failed'}`);
@@ -571,9 +662,17 @@ async function calcQuickRowPrice(rowIdx, exp) {
     }
 }
 
+/** Re-resolve a row end to end.  The strike now drives the IV, so a strike edit
+ *  has to redo the IV lookup, not just the price. */
 async function recalcQuickRow(rowIdx) {
-    const first3 = state.expirations.slice(0, 3);
-    if (rowIdx < first3.length) await calcQuickRowPrice(rowIdx, first3[rowIdx]);
+    const quickExps = quickViewExpirations();
+    if (rowIdx >= quickExps.length) return;
+    $(`qiv${rowIdx}`).textContent    = '…';
+    $(`qprice${rowIdx}`).textContent = '…';
+    await fetchQuickRowIV(
+        rowIdx, quickExps[rowIdx], getOptType(),
+        parseFloat($('fPrice').value), parseFloat($('fRiskFree').value),
+    );
 }
 
 // ============================================================
