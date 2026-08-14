@@ -11,9 +11,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from option_lib.disk_cache import set_app_tag as _set_app_tag
 from option_lib.data_provider import get_provider
 from option_lib.math_util import get_days_to_expiration, get_years_to_expiration
 import option_pricing as bs
+
+# Name this app to option_lib's disk caches (sectors, names), shared with the
+# sibling apps through OPTION_LIB_CACHE_DIR.  Only the scratch file is per-app;
+# the cached reference data is common to all of them.
+_set_app_tag("option")
 
 
 # ---------------------------------------------------------------------------
