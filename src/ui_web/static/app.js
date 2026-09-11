@@ -191,6 +191,11 @@ async function loadStockData() {
                    : data.pre_market_price                   ? 'pre-market'
                    : '';
 
+    // A custom strike belongs to the ticker it was typed for.  getStrike()
+    // prefers it over the dropdown, so left in place it would keep the main
+    // panel and the quick view stuck on the previous ticker's strike.
+    if (state.ticker !== ticker) $('fStrikeCustom').value = '';
+
     state.ticker        = ticker;
     state.regularPrice  = data.current_price;
     state.extHoursPrice = extPrice;
@@ -375,6 +380,10 @@ async function onExpirationChange() {
 }
 
 async function onStrikeChange() {
+    // Picking on the pulldown must win: getStrike() prefers the custom field
+    // whenever it is filled, so a leftover custom strike would silently pin
+    // the main panel and the quick view synced below to the old value.
+    $('fStrikeCustom').value = '';
     const strike  = getStrike();
     const exp     = $('fExpiration').value;
     const optType = getOptType();

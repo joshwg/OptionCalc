@@ -76,16 +76,16 @@ All tests live in `src/tests/` and run via pytest (configured in `pytest.ini`).
 
 ```bash
 # Run the full suite (from the project root)
-PYTHONPATH=src:/mnt/c/Users/josh/Docs/lab venv/bin/python -m pytest
+PYTHONPATH=src venv/bin/python -m pytest
 
 # Run a specific file
-PYTHONPATH=src:/mnt/c/Users/josh/Docs/lab venv/bin/python -m pytest src/tests/test_option_pricing.py
+PYTHONPATH=src venv/bin/python -m pytest src/tests/test_option_pricing.py
 
 # Skip slow binomial-convergence tests
-PYTHONPATH=src:/mnt/c/Users/josh/Docs/lab venv/bin/python -m pytest -m "not slow"
+PYTHONPATH=src venv/bin/python -m pytest -m "not slow"
 
 # Skip live-network tests (test_cvna_load.py and test_fair_value_load.py are marked @pytest.mark.network)
-PYTHONPATH=src:/mnt/c/Users/josh/Docs/lab venv/bin/python -m pytest -m "not network"
+PYTHONPATH=src venv/bin/python -m pytest -m "not network"
 ```
 
 Test files and what they cover:
@@ -108,4 +108,4 @@ Test files and what they cover:
 - Dividend yield and implied volatility from Yahoo Finance may arrive as percentages (>0.5 or >2) — `normalize_dividend_yield()` and `normalize_implied_volatility()` handle this.
 - Black-Scholes is for European options; Binomial Tree (`american_option_binomial`) handles early exercise for American options.
 - `Ctrl+1` through `Ctrl+9` opens multiple calculator windows in the desktop app.
-- Shell commands run via PowerShell. Use the Read/Write/Edit tools for file operations.
+- Shell commands run in WSL bash from `/home/josh/projects/OptionCalculator` (never PowerShell); `option_lib` is installed editable into `venv` from the sibling `../option_lib`. Use the Read/Write/Edit tools for file operations.
